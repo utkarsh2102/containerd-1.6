@@ -1,0 +1,305 @@
+containerd (1.5.9-0ubuntu1) jammy; urgency=medium
+
+  * New upstream release (LP: #1946851, #1955413).
+  * Remove patches applied by upstream.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Mon, 10 Jan 2022 16:27:26 -0300
+
+containerd (1.5.5-0ubuntu3) impish; urgency=medium
+
+  * SECURITY UPDATE: insufficiently restricted directory permissions
+    - debian/patches/1.5-reduce-directory-permissions.patch: reduce
+      permissions for bundle dir in runtime/v1/linux/bundle.go,
+      runtime/v1/linux/bundle_test.go, runtime/v2/bundle.go,
+      runtime/v2/bundle_default.go, runtime/v2/bundle_linux.go,
+      runtime/v2/bundle_linux_test.go, runtime/v2/bundle_test.go,
+      snapshots/btrfs/btrfs.go.
+    - CVE-2021-41103
+
+ -- Marc Deslauriers <marc.deslauriers@ubuntu.com>  Wed, 06 Oct 2021 09:13:26 -0400
+
+containerd (1.5.5-0ubuntu2) impish; urgency=medium
+
+  * d/p/seccomp-support-clone3-syscall.patch: clone3 is explicitly requested
+    to give ENOSYS instead of the default EPERM, when CAP_SYS_ADMIN is unset.
+    (LP: #1943049).
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Tue, 14 Sep 2021 11:45:36 -0300
+
+containerd (1.5.5-0ubuntu1) impish; urgency=medium
+
+  * New upstream release.
+  * Bump debhelper compatibility level to 11.
+    - d/rules: remove the unneeded --with=systemd from the dh call.
+    - d/rules: override dh_installsystemd instead of dh_installinit.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Wed, 04 Aug 2021 17:37:16 -0300
+
+containerd (1.5.2-0ubuntu1) impish; urgency=medium
+
+  * New upstream release.
+  * d/p/skip-tests-with-privilege.patch: add a patch to skip tests which
+    require a certain level of privilege not achievable in the build
+    environment.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Thu, 20 May 2021 15:55:04 -0300
+
+containerd (1.4.4-0ubuntu1) hirsute; urgency=medium
+
+  * New upstream release.
+    - It contains a fix for CVE-2021-21334 along with various other minor
+      issues.
+  * Refresh preserve-debug-info.patch
+  * d/rules: set GO111MODULE to auto. In Go 1.16, which is the default in
+    Hirsute now, the packages are built in module-aware mode. Since containerd
+    does not have a go.mod file in its source tree it FTBFS. Setting GO111MODULE
+    to auto we can have the previous behavior which is enable module-aware mode
+    only if the go.mod file exists.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Tue, 10 Mar 2021 11:45:18 -0300
+
+containerd (1.4.3-0ubuntu1) hirsute; urgency=medium
+
+  * New upstream release.
+  * Drop patches applied by upstream.
+    - d/p/4134-update-etcd-bbolt.patch
+    - d/p/4277-fix-build-on-riscv64.patch
+    - d/p/e859b8a-gc-increase-sleep-time-in-test.patch
+    - d/p/CVE-2020-15257.patch
+  * Update the copyright file.
+  * Build depend on default Golang version in all architectures.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Tue, 12 Jan 2021 18:45:18 -0300
+
+containerd (1.3.7-0ubuntu5) hirsute; urgency=medium
+
+  * d/control: add a Breaks for docker.io lower than 19.03.13-0ubuntu4.
+    See LP #1870514. The previous versions stop the docker daemon when a
+    containerd update is performed, this Breaks statement will make sure we
+    have a newer version which has the appropriate fix.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Mon, 07 Dec 2020 16:33:03 -0300
+
+containerd (1.3.7-0ubuntu4) hirsute; urgency=medium
+
+  * SECURITY UPDATE: Elevation of privilege vulnerability
+    - debian/patches/CVE-2020-15257.patch: Use path based unix socket for shims
+      and use path-based unix socket for containerd-shim.
+    - CVE-2020-15257
+
+ -- Paulo Flabiano Smorigo <pfsmorigo@canonical.com>  Thu, 26 Nov 2020 17:35:23 +0000
+
+containerd (1.3.7-0ubuntu3) groovy; urgency=medium
+
+  * Build with Go 1.14 on riscv64 as 1.13 does not exist here. Adventurous
+    riscv64 users can deal with any breakage :)
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Tue, 13 Oct 2020 12:14:27 +1300
+
+containerd (1.3.7-0ubuntu2) groovy; urgency=medium
+
+  [ Tianon Gravi ]
+  * Build using Go 1.13 (per upstream)
+  * Use dh-golang to generate appropriate Built-Using
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Thu, 08 Oct 2020 10:51:47 +1300
+
+containerd (1.3.7-0ubuntu1) groovy; urgency=medium
+
+  * New upstream release.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Thu, 17 Sep 2020 09:10:52 +1200
+
+containerd (1.3.6-0ubuntu1) groovy; urgency=medium
+
+  * New upstream release.
+  * d/rules: remove vendor directory from the library package
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Sat, 11 Jul 2020 11:20:49 -0300
+
+containerd (1.3.4-0ubuntu6) groovy; urgency=medium
+
+  * d/control: remove the golang-race-detector-runtime build dependency as the
+    package is no longer built from source with latest golang.
+
+ -- Łukasz 'sil2100' Zemczak <lukasz.zemczak@ubuntu.com>  Tue, 16 Jun 2020 10:12:13 +0200
+
+containerd (1.3.4-0ubuntu5) groovy; urgency=medium
+
+  * Rename install file to match the new binary package name
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Mon, 01 Jun 2020 09:51:41 -0300
+
+containerd (1.3.4-0ubuntu4) groovy; urgency=medium
+
+  * d/control: rename binary package with dev files and update
+    XS-Go-Import-Path. Now it is called
+    golang-github-containerd-containerd-dev instead of
+    golang-github-docker-containerd-dev.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Thu, 28 May 2020 17:05:30 -0300
+
+containerd (1.3.4-0ubuntu3) groovy; urgency=medium
+
+  * Add a patch to fix the gc/scheduler flaky test on riscv64
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Thu, 21 May 2020 18:48:48 -0300
+
+containerd (1.3.4-0ubuntu2) groovy; urgency=medium
+
+  * Add a patch to not use -buildmode=pie on riscv64
+  * d/rules: check for DEB_BUILD_ARCH to set variables to build on riscv64
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Wed, 20 May 2020 19:19:41 -0300
+
+containerd (1.3.4-0ubuntu1) groovy; urgency=medium
+
+  * New upstream release.
+  * d/p/0001-Improve-host-fallback-behaviour-in-docker-remote.patch: drop
+    patch applied by upstream.
+  * debian/control: update Vcs-{Git,Broswer} to point to the Github repository.
+  * d/p/update_go.etcd.io_bbolt_to_v1.3.4.patch: update go.etcd.io/bbolt to
+    version 1.3.4 to fix a FTBFS against Go 1.14.
+  * d/rules: disable btrfs plugin on riscv64, it needs cgo and riscv64 doesn't
+    support.
+
+ -- Lucas Kanashiro <kanashiro@ubuntu.com>  Fri, 15 May 2020 10:36:37 -0300
+
+containerd (1.3.3-0ubuntu2) focal; urgency=high
+
+  * d/p/0001-Improve-host-fallback-behaviour-in-docker-remote.patch:
+    Fixes regression introduced in 1.3.3 update, LP: #1867398.
+
+ -- Jorge Niedbalski <jorge.niedbalski@canonical.com>  Thu, 26 Mar 2020 21:24:48 -0300
+
+containerd (1.3.3-0ubuntu1) focal; urgency=medium
+
+  * New upstream version.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Wed, 12 Feb 2020 14:18:29 +1300
+
+containerd (1.3.2-0ubuntu1) focal; urgency=medium
+
+  [ Tianon Gravi ]
+  * Use "sed" to adjust upstream's service file ExecStart value
+  * Update to 1.3.2 upstream release
+
+  [ Michael Hudson-Doyle ]
+  * d/patches/preserve-debug-info.patch: generate binaries with debug info in
+    them so we still get ddebs.
+
+ -- Michael Hudson-Doyle <mwhudson@debian.org>  Tue, 11 Feb 2020 12:29:51 +1300
+
+containerd (1.3.1-0ubuntu1) focal; urgency=medium
+
+  * Update to 1.3.1 upstream release (LP: #1854841)
+
+ -- Tianon Gravi <tianon@debian.org>  Tue, 03 Dec 2019 15:24:58 +1300
+
+containerd (1.2.10-0ubuntu1) eoan; urgency=medium
+
+  * New upstream release.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Mon, 30 Sep 2019 11:31:16 +1300
+
+containerd (1.2.9-0ubuntu1) eoan; urgency=medium
+
+  * New upstream release.
+  * Set GOCACHE to a safely-writeable directory during build.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Wed, 18 Sep 2019 09:46:57 +0200
+
+containerd (1.2.6-0ubuntu1) disco; urgency=medium
+
+  * New upstream release.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Fri, 12 Apr 2019 12:28:52 +1200
+
+containerd (1.2.5-0ubuntu1) disco; urgency=medium
+
+  * New upstream release.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Thu, 14 Mar 2019 10:59:45 +1300
+
+containerd (1.2.2-0ubuntu3) disco; urgency=medium
+
+  * Add available docs to containerd package
+  * Add "basic-smoke" autopkgtest to verify basic functionality
+  * Skip tests on armhf (for now)
+
+ -- Tianon Gravi <tianon@debian.org>  Thu, 14 Feb 2019 14:26:03 -0800
+
+containerd (1.2.2-0ubuntu2) disco; urgency=medium
+
+  * Update "golang-race-detector-runtime" Build-Depends to be amd64-only
+
+ -- Tianon Gravi <tianon@debian.org>  Wed, 13 Feb 2019 16:17:22 -0800
+
+containerd (1.2.2-0ubuntu1) disco; urgency=medium
+
+  * Update to 1.2.2 upstream release
+
+ -- Tianon Gravi <tianon@debian.org>  Thu, 17 Jan 2019 15:40:26 -0800
+
+containerd (0.2.5-0ubuntu2) artful; urgency=medium
+
+  * No change rebuild to fix miscompilation on ppc64el. (LP: #1711935) 
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Thu, 24 Aug 2017 20:19:36 +1200
+
+containerd (0.2.5-0ubuntu1) zesty; urgency=medium
+
+  * Update to 0.2.5 upstream release (LP: #1655906)
+
+ -- Tianon Gravi <tianon@debian.org>  Fri, 13 Jan 2017 12:08:00 +1300
+
+containerd (0.2.3-0ubuntu1) yakkety; urgency=medium
+
+  * Update to 0.2.3 upstream release
+    - remove "fix-arm64.patch"; applied upstream,
+      https://github.com/docker/containerd/pull/226
+    - update runc dependency (>= 1.0.0-rc1)
+
+ -- Tianon Gravi <tianon@debian.org>  Wed, 24 Aug 2016 15:44:28 -0700
+
+containerd (0.2.1-0ubuntu4) yakkety; urgency=medium
+
+  * Add d/patches/fix-arm64.patch, a backport of upstream arm64 fixes.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Wed, 06 Jul 2016 14:26:33 +1200
+
+containerd (0.2.1-0ubuntu3) yakkety; urgency=medium
+
+  * Fix "-dev" package Depends, and use vendoring more directly
+
+ -- Tianon Gravi <tianon@debian.org>  Wed, 15 Jun 2016 14:47:15 -0700
+
+containerd (0.2.1-0ubuntu2) yakkety; urgency=medium
+
+  * No change rebuild to pick up s390x fixes.
+
+ -- Michael Hudson-Doyle <michael.hudson@ubuntu.com>  Fri, 10 Jun 2016 15:13:39 +1200
+
+containerd (0.2.1-0ubuntu1) yakkety; urgency=medium
+
+  * Use bundled dependencies for Ubuntu
+
+ -- Tianon Gravi <tianon@debian.org>  Fri, 20 May 2016 09:39:39 -0700
+
+containerd (0.2.1~ds1-1) unstable; urgency=medium
+
+  * Team upload.
+
+  [ Tianon Gravi ]
+  * Update to 0.2.1 upstream release
+
+  [ Tim Potter ]
+  * Add "golang-github-docker-containerd-dev" package (Closes: #822213)
+
+ -- Dmitry Smirnov <onlyjob@debian.org>  Sat, 23 Apr 2016 22:54:15 +1000
+
+containerd (0.1.0~ds1-1) unstable; urgency=medium
+
+  * Initial release (Closes: #819520)
+
+ -- Tianon Gravi <tianon@debian.org>  Sat, 02 Apr 2016 11:05:01 -0700
