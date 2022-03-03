@@ -21,14 +21,14 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
+
+	exec "golang.org/x/sys/execabs"
 )
 
 func TestMain(m *testing.M) {
@@ -79,7 +79,7 @@ func testCompressDecompress(t *testing.T, size int, compression Compression) Dec
 	if err != nil {
 		t.Fatal(err)
 	}
-	decompressed, err := ioutil.ReadAll(decompressor)
+	decompressed, err := io.ReadAll(decompressor)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,7 +122,7 @@ func TestCompressDecompressUncompressed(t *testing.T) {
 
 func TestDetectPigz(t *testing.T) {
 	// Create fake PATH with unpigz executable, make sure detectPigz can find it
-	tempPath, err := ioutil.TempDir("", "containerd_temp_")
+	tempPath, err := os.MkdirTemp("", "containerd_temp_")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +134,7 @@ func TestDetectPigz(t *testing.T) {
 
 	fullPath := filepath.Join(tempPath, filename)
 
-	if err := ioutil.WriteFile(fullPath, []byte(""), 0111); err != nil {
+	if err := os.WriteFile(fullPath, []byte(""), 0111); err != nil {
 		t.Fatal(err)
 	}
 
@@ -164,7 +164,7 @@ func TestCmdStream(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	buf, err := ioutil.ReadAll(out)
+	buf, err := io.ReadAll(out)
 	if err != nil {
 		t.Fatalf("failed to read from stdout: %s", err)
 	}
@@ -180,11 +180,47 @@ func TestCmdStreamBad(t *testing.T) {
 		t.Fatalf("failed to start command: %v", err)
 	}
 
-	if buf, err := ioutil.ReadAll(out); err == nil {
+	if buf, err := io.ReadAll(out); err == nil {
 		t.Fatal("command should have failed")
 	} else if err.Error() != "exit status 1: bad result\n" {
 		t.Fatalf("wrong error: %s", err.Error())
 	} else if string(buf) != "hello\n" {
 		t.Fatalf("wrong output: %s", string(buf))
+	}
+}
+
+func TestDetectCompressionZstd(t *testing.T) {
+	for _, tc := range []struct {
+		source   []byte
+		expected Compression
+	}{
+		{
+			// test zstd compression without skippable frames.
+			source: []byte{
+				0x28, 0xb5, 0x2f, 0xfd, // magic number of Zstandard frame: 0xFD2FB528
+				0x04, 0x00, 0x31, 0x00, 0x00, // frame header
+				0x64, 0x6f, 0x63, 0x6b, 0x65, 0x72, // data block "docker"
+				0x16, 0x0e, 0x21, 0xc3, // content checksum
+			},
+			expected: Zstd,
+		},
+		{
+			// test zstd compression with skippable frames.
+			source: []byte{
+				0x50, 0x2a, 0x4d, 0x18, // magic number of skippable frame: 0x184D2A50 to 0x184D2A5F
+				0x04, 0x00, 0x00, 0x00, // frame size
+				0x5d, 0x00, 0x00, 0x00, // user data
+				0x28, 0xb5, 0x2f, 0xfd, // magic number of Zstandard frame: 0xFD2FB528
+				0x04, 0x00, 0x31, 0x00, 0x00, // frame header
+				0x64, 0x6f, 0x63, 0x6b, 0x65, 0x72, // data block "docker"
+				0x16, 0x0e, 0x21, 0xc3, // content checksum
+			},
+			expected: Zstd,
+		},
+	} {
+		compression := DetectCompression(tc.source)
+		if compression != tc.expected {
+			t.Fatalf("Unexpected compression %v, expected %v", compression, tc.expected)
+		}
 	}
 }

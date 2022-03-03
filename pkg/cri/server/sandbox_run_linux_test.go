@@ -19,6 +19,7 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -26,7 +27,8 @@ import (
 	"github.com/opencontainers/selinux/go-selinux"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
+	v1 "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/containerd/containerd/pkg/cri/annotations"
 	"github.com/containerd/containerd/pkg/cri/opts"
@@ -115,6 +117,8 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				assert.Contains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
 					Type: runtimespec.IPCNamespace,
 				})
+				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
+				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
 			},
 		},
 		"host namespace": {
@@ -142,6 +146,8 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				assert.NotContains(t, spec.Linux.Namespaces, runtimespec.LinuxNamespace{
 					Type: runtimespec.IPCNamespace,
 				})
+				assert.NotContains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "0")
+				assert.NotContains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "0 2147483647")
 			},
 		},
 		"should set supplemental groups correctly": {
@@ -156,9 +162,83 @@ func TestLinuxSandboxContainerSpec(t *testing.T) {
 				assert.Contains(t, spec.Process.User.AdditionalGids, uint32(2222))
 			},
 		},
+		"should overwrite default sysctls": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.Sysctls = map[string]string{
+					"net.ipv4.ip_unprivileged_port_start": "500",
+					"net.ipv4.ping_group_range":           "1 1000",
+				}
+			},
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				require.NotNil(t, spec.Process)
+				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ip_unprivileged_port_start"], "500")
+				assert.Contains(t, spec.Linux.Sysctl["net.ipv4.ping_group_range"], "1 1000")
+			},
+		},
+		"sandbox sizing annotations should be set if LinuxContainerResources were provided": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.Resources = &v1.LinuxContainerResources{
+					CpuPeriod:          100,
+					CpuQuota:           200,
+					CpuShares:          5000,
+					MemoryLimitInBytes: 1024,
+				}
+			},
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				value, ok := spec.Annotations[annotations.SandboxCPUPeriod]
+				assert.True(t, ok)
+				assert.EqualValues(t, strconv.FormatInt(100, 10), value)
+				assert.EqualValues(t, "100", value)
+
+				value, ok = spec.Annotations[annotations.SandboxCPUQuota]
+				assert.True(t, ok)
+				assert.EqualValues(t, "200", value)
+
+				value, ok = spec.Annotations[annotations.SandboxCPUShares]
+				assert.True(t, ok)
+				assert.EqualValues(t, "5000", value)
+
+				value, ok = spec.Annotations[annotations.SandboxMem]
+				assert.True(t, ok)
+				assert.EqualValues(t, "1024", value)
+			},
+		},
+		"sandbox sizing annotations should not be set if LinuxContainerResources were not provided": {
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				_, ok := spec.Annotations[annotations.SandboxCPUPeriod]
+				assert.False(t, ok)
+				_, ok = spec.Annotations[annotations.SandboxCPUQuota]
+				assert.False(t, ok)
+				_, ok = spec.Annotations[annotations.SandboxCPUShares]
+				assert.False(t, ok)
+				_, ok = spec.Annotations[annotations.SandboxMem]
+				assert.False(t, ok)
+			},
+		},
+		"sandbox sizing annotations are zero if the resources are set to 0": {
+			configChange: func(c *runtime.PodSandboxConfig) {
+				c.Linux.Resources = &v1.LinuxContainerResources{}
+			},
+			specCheck: func(t *testing.T, spec *runtimespec.Spec) {
+				value, ok := spec.Annotations[annotations.SandboxCPUPeriod]
+				assert.True(t, ok)
+				assert.EqualValues(t, "0", value)
+				value, ok = spec.Annotations[annotations.SandboxCPUQuota]
+				assert.True(t, ok)
+				assert.EqualValues(t, "0", value)
+				value, ok = spec.Annotations[annotations.SandboxCPUShares]
+				assert.True(t, ok)
+				assert.EqualValues(t, "0", value)
+				value, ok = spec.Annotations[annotations.SandboxMem]
+				assert.True(t, ok)
+				assert.EqualValues(t, "0", value)
+			},
+		},
 	} {
 		t.Logf("TestCase %q", desc)
 		c := newTestCRIService()
+		c.config.EnableUnprivilegedICMP = true
+		c.config.EnableUnprivilegedPorts = true
 		config, imageConfig, specCheck := getRunPodSandboxTestData()
 		if test.configChange != nil {
 			test.configChange(config)

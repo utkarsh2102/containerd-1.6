@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,15 +17,15 @@
 package integration
 
 import (
-	"io/ioutil"
 	"os"
-	"os/exec"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	exec "golang.org/x/sys/execabs"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // Test to load an image from tarball.
@@ -41,11 +39,12 @@ func TestImageLoad(t *testing.T) {
 	t.Logf("docker save image into tarball")
 	output, err := exec.Command("docker", "pull", testImage).CombinedOutput()
 	require.NoError(t, err, "output: %q", output)
-	tarF, err := ioutil.TempFile("", "image-load")
-	tar := tarF.Name()
+	// os.CreateTemp also opens a file, which might prevent us from overwriting that file with docker save.
+	tarDir, err := os.MkdirTemp("", "image-load")
+	tar := filepath.Join(tarDir, "image.tar")
 	require.NoError(t, err)
 	defer func() {
-		assert.NoError(t, os.RemoveAll(tar))
+		assert.NoError(t, os.RemoveAll(tarDir))
 	}()
 	output, err = exec.Command("docker", "save", testImage, "-o", tar).CombinedOutput()
 	require.NoError(t, err, "output: %q", output)
@@ -59,7 +58,7 @@ func TestImageLoad(t *testing.T) {
 
 	t.Logf("load image in cri")
 	ctr, err := exec.LookPath("ctr")
-	require.NoError(t, err, "ctr should be installed, make sure you've run `make install.deps`")
+	require.NoError(t, err, "ctr should be installed, make sure you've run `make install-deps`")
 	output, err = exec.Command(ctr, "-address="+containerdEndpoint,
 		"-n=k8s.io", "images", "import", tar).CombinedOutput()
 	require.NoError(t, err, "output: %q", output)
@@ -77,13 +76,7 @@ func TestImageLoad(t *testing.T) {
 	require.Equal(t, []string{loadedImage}, img.RepoTags)
 
 	t.Logf("create a container with the loaded image")
-	sbConfig := PodSandboxConfig("sandbox", Randomize("image-load"))
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", Randomize("image-load"))
 	containerConfig := ContainerConfig(
 		"container",
 		testImage,

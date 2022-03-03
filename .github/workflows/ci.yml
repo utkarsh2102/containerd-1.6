@@ -2,11 +2,11 @@ name: CI
 on:
   push:
     branches:
-      - master
+      - main
       - 'release/**'
   pull_request:
     branches:
-      - master
+      - main
       - 'release/**'
 
 jobs:
@@ -20,25 +20,20 @@ jobs:
 
     strategy:
       matrix:
-        go-version: [1.16.12]
+        go-version: [1.17.7]
         os: [ubuntu-18.04, macos-10.15, windows-2019]
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/setup-go@v2
         with:
-          path: src/github.com/containerd/containerd
+          go-version: ${{ matrix.go-version }}
 
-      - name: Set env
-        shell: bash
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-
+      - uses: actions/checkout@v2
       - uses: golangci/golangci-lint-action@v2
         with:
-          version: v1.36.0
-          working-directory: src/github.com/containerd/containerd
+          version: v1.42.0
           args: --timeout=5m
+          skip-go-installation: true
 
   #
   # Project checks
@@ -51,12 +46,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
-
-      - shell: bash
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+          go-version: '1.17.7'
 
       - uses: actions/checkout@v2
         with:
@@ -66,6 +56,12 @@ jobs:
       - uses: containerd/project-checks@v1
         with:
           working-directory: src/github.com/containerd/containerd
+
+      - name: verify go modules and vendor directory
+        run: |
+          sudo apt-get install -y jq
+          make verify-vendor
+        working-directory: src/github.com/containerd/containerd
 
   #
   # Protobuf checks
@@ -82,7 +78,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
+          go-version: '1.17.7'
 
       - uses: actions/checkout@v2
         with:
@@ -92,7 +88,6 @@ jobs:
         shell: bash
         run: |
           echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "GO111MODULE=off" >> $GITHUB_ENV
           echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
       - name: Install protobuf
@@ -115,22 +110,10 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
-
-      - name: Set env
-        shell: bash
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-
+          go-version: '1.17.7'
       - uses: actions/checkout@v2
-        with:
-          path: src/github.com/containerd/containerd
-
-      - run: GO111MODULE=on go get github.com/cpuguy83/go-md2man/v2@v2.0.0
-
+      - run: go install github.com/cpuguy83/go-md2man/v2@v2.0.1
       - run: make man
-        working-directory: src/github.com/containerd/containerd
 
   # Make sure binaries compile with other platforms
   crossbuild:
@@ -161,15 +144,8 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
-      - name: Set env
-        shell: bash
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
+          go-version: '1.17.7'
       - uses: actions/checkout@v2
-        with:
-          path: src/github.com/containerd/containerd
       - run: |
           set -e -x
 
@@ -203,9 +179,8 @@ jobs:
           if [ -n "${packages}" ]; then
             sudo apt-get update && sudo apt-get install -y ${packages}
           fi
-        name: install deps
+        name: Install deps
       - name: Build
-        working-directory: src/github.com/containerd/containerd
         env:
           GOOS: ${{matrix.goos}}
           GOARCH: ${{matrix.goarch}}
@@ -225,12 +200,8 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-18.04, macos-10.15, windows-2019]
-        go-version: ['1.16.12']
-        include:
-          # Go 1.13.x is still used by Docker/Moby
-          - go-version: '1.13.x'
-            os: ubuntu-18.04
+        os: [ubuntu-18.04, macos-10.15, windows-2019, windows-2022]
+        go-version: ['1.16.14', '1.17.7']
 
     steps:
       - uses: actions/setup-go@v2
@@ -258,11 +229,16 @@ jobs:
   #
   integration-windows:
     name: Windows Integration
-    runs-on: windows-2019
-    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
     needs: [project, linters, protos, man]
     env:
       GOTEST: gotestsum --
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2019, windows-2022]
 
     defaults:
       run:
@@ -272,7 +248,7 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
+          go-version: '1.17.7'
 
       - uses: actions/checkout@v2
         with:
@@ -321,6 +297,7 @@ jobs:
       - name: Integration 2
         env:
           TESTFLAGS_PARALLEL: 1
+          EXTRA_TESTFLAGS: "-short"
           CGO_ENABLED: 1
           GOTESTSUM_JUNITFILE: ${{github.workspace}}/test-integration-parallel-junit.xml
         run: mingw32-make.exe integration
@@ -353,55 +330,35 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
+          go-version: '1.17.7'
 
       - uses: actions/checkout@v2
-        with:
-          path: src/github.com/containerd/containerd
-
-      - name: Set env
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
 
       - name: Install containerd dependencies
         env:
           RUNC_FLAVOR: ${{ matrix.runc }}
+          GOFLAGS: -modcacherw
         run: |
           sudo apt-get install -y gperf
           sudo -E PATH=$PATH script/setup/install-seccomp
           sudo -E PATH=$PATH script/setup/install-runc
-          sudo -E PATH=$PATH script/setup/install-cni
+          sudo -E PATH=$PATH script/setup/install-cni $(grep containernetworking/plugins go.mod | awk '{print $2}')
           sudo -E PATH=$PATH script/setup/install-critools
-        working-directory: src/github.com/containerd/containerd
 
       - name: Install criu
         run: |
-          sudo apt-get install -y \
-            libprotobuf-dev \
-            libprotobuf-c-dev \
-            protobuf-c-compiler \
-            protobuf-compiler \
-            python-protobuf \
-            libnl-3-dev \
-            libnet-dev \
-            libcap-dev \
-            python-future
-          wget https://github.com/checkpoint-restore/criu/archive/v3.13.tar.gz -O criu.tar.gz
-          tar -zxf criu.tar.gz
-          cd criu-3.13
-          sudo make install-criu
+          sudo add-apt-repository ppa:criu/ppa
+          sudo apt-get update
+          sudo apt-get install -y criu
 
       - name: Install containerd
         env:
           CGO_ENABLED: 1
         run: |
-          make binaries
+          make binaries GO_BUILD_FLAGS="-mod=vendor"
           sudo -E PATH=$PATH make install
-        working-directory: src/github.com/containerd/containerd
 
       - run: sudo -E PATH=$PATH script/setup/install-gotestsum
-        working-directory: src/github.com/containerd/containerd
       - name: Tests
         env:
           GOPROXY: direct
@@ -409,7 +366,6 @@ jobs:
         run: |
           make test
           sudo -E PATH=$PATH make root-test
-        working-directory: src/github.com/containerd/containerd
 
       - name: Integration 1
         env:
@@ -418,8 +374,11 @@ jobs:
           RUNC_FLAVOR: ${{ matrix.runc }}
           GOTESTSUM_JUNITFILE: ${{github.workspace}}/test-integration-serial-junit.xml
         run: |
-          sudo -E PATH=$PATH make integration EXTRA_TESTFLAGS=-no-criu TESTFLAGS_RACE=-race
-        working-directory: src/github.com/containerd/containerd
+          extraflags=""
+          [ "${RUNC_FLAVOR}" == "crun" ] && {
+                  extraflags="EXTRA_TESTFLAGS=-no-criu";
+          }
+          sudo -E PATH=$PATH make integration ${extraflags} TESTFLAGS_RACE=-race
 
       # Run the integration suite a second time. See discussion in github.com/containerd/containerd/pull/1759
       - name: Integration 2
@@ -429,32 +388,17 @@ jobs:
           RUNC_FLAVOR: ${{ matrix.runc }}
           GOTESTSUM_JUNITFILE: ${{github.workspace}}/test-integration-parallel-junit.xml
         run: |
-          sudo -E PATH=$PATH TESTFLAGS_PARALLEL=1 make integration EXTRA_TESTFLAGS=-no-criu
-        working-directory: src/github.com/containerd/containerd
-
-      # CRIU wouldn't work with overlay snapshotter yet.
-      # See https://github.com/containerd/containerd/pull/4708#issuecomment-724322294.
-      - name: CRIU Integration
-        env:
-          GOPROXY: direct
-          TEST_RUNTIME: ${{ matrix.runtime }}
-          RUNC_FLAVOR: ${{ matrix.runc }}
-          GOTESTSUM_JUNITFILE: ${{github.workspace}}/test-integration-criu-junit.xml
-        # crun doesn't have "checkpoint" command.
-        if: ${{ matrix.runc == 'runc' }}
-        run: |
-          sudo -E PATH=$PATH \
-          TESTFLAGS_PARALLEL=1 \
-          TEST_SNAPSHOTTER=native \
-          make integration EXTRA_TESTFLAGS='-run TestCheckpoint'
-        working-directory: src/github.com/containerd/containerd
+          extraflags=""
+          [ "${RUNC_FLAVOR}" == "crun" ] && {
+                  extraflags="EXTRA_TESTFLAGS=-no-criu";
+          }
+          sudo -E PATH=$PATH TESTFLAGS_PARALLEL=1 make integration ${extraflags}
 
       - name: CRI Integration Test
         env:
           TEST_RUNTIME: ${{ matrix.runtime }}
         run: |
           CONTAINERD_RUNTIME=$TEST_RUNTIME make cri-integration
-        working-directory: src/github.com/containerd/containerd
 
       - name: cri-tools critest
         env:
@@ -505,25 +449,14 @@ jobs:
     steps:
       - uses: actions/setup-go@v2
         with:
-          go-version: '1.16.12'
+          go-version: '1.17.7'
       - uses: actions/checkout@v2
-        with:
-          path: src/github.com/containerd/containerd
-
-      - name: Set env
-        run: |
-          echo "GOPATH=${{ github.workspace }}" >> $GITHUB_ENV
-          echo "${{ github.workspace }}/bin" >> $GITHUB_PATH
-
       - run: sudo -E PATH=$PATH script/setup/install-gotestsum
-        working-directory: src/github.com/containerd/containerd
       - name: Tests
         env:
           GOPROXY: direct
           GOTESTSUM_JUNITFILE: "${{ github.workspace }}/macos-test-junit.xml"
-        run: |
-          make test
-        working-directory: src/github.com/containerd/containerd
+        run: make test
       - uses: actions/upload-artifact@v2
         if: always()
         with:
@@ -532,7 +465,7 @@ jobs:
             *-junit.xml
 
   cgroup2:
-    name: CGroupsV2 and SELinux Integration
+    name: CGroupsV2 - SELinux enforced
     # nested virtualization is only available on macOS hosts
     runs-on: macos-10.15
     timeout-minutes: 45
@@ -571,6 +504,11 @@ jobs:
           SELINUX: Enforcing
           REPORT_DIR: /tmp/critestreport
         run: vagrant up --provision-with=selinux,install-runc,install-gotestsum,test-cri
+
+      - name: Collect the VM's IP address for Docker Hub's throttling issue
+        if: failure()
+        run: vagrant ssh -- curl https://api64.ipify.org/
+
       - name: Get test reports
         if: always()
         run: |
@@ -586,3 +524,35 @@ jobs:
           path: |
             ${{github.workspace}}/*-junit.xml
             ${{github.workspace}}/critestreport/*
+
+  cgroup2-misc:
+    name: CGroupsV2 - rootless CRI test
+    # nested virtualization is only available on macOS hosts
+    runs-on: macos-10.15
+    timeout-minutes: 45
+    needs: [project, linters, protos, man]
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: "Cache ~/.vagrant.d/boxes"
+        uses: actions/cache@v2
+        with:
+          path: ~/.vagrant.d/boxes
+          key: vagrant-${{ hashFiles('Vagrantfile*') }}
+
+      - name: Vagrant start
+        run: |
+          # Retry if it fails (download.fedoraproject.org returns 404 sometimes)
+          vagrant up || vagrant up
+
+      # slow, so separated from the regular cgroup2 task
+      - name: CRI-in-UserNS test with Rootless Podman
+        run: |
+          vagrant up --provision-with=install-rootless-podman
+          # Execute rootless podman to create the UserNS env
+          vagrant ssh -- podman build --target cri-in-userns -t cri-in-userns -f /vagrant/contrib/Dockerfile.test /vagrant
+          vagrant ssh -- podman run --rm --privileged cri-in-userns
+
+      - name: Collect the VM's IP address for Docker Hub's throttling issue
+        if: failure()
+        run: vagrant ssh -- curl https://api64.ipify.org/

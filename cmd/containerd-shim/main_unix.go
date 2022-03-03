@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 /*
@@ -26,7 +27,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"os/exec"
 	"os/signal"
 	"runtime"
 	"runtime/debug"
@@ -45,8 +45,8 @@ import (
 	"github.com/containerd/ttrpc"
 	"github.com/containerd/typeurl"
 	ptypes "github.com/gogo/protobuf/types"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	exec "golang.org/x/sys/execabs"
 	"golang.org/x/sys/unix"
 )
 
@@ -153,7 +153,7 @@ func executeShim() error {
 	}
 	server, err := newServer()
 	if err != nil {
-		return errors.Wrap(err, "failed creating server")
+		return fmt.Errorf("failed creating server: %w", err)
 	}
 	sv, err := shim.NewService(
 		shim.Config{
@@ -211,7 +211,7 @@ func serve(ctx context.Context, server *ttrpc.Server, path string) error {
 			p = abstractSocketPrefix + p
 		}
 		if len(p) > socketPathLimit {
-			return errors.Errorf("%q: unix socket path too long (> %d)", p, socketPathLimit)
+			return fmt.Errorf("%q: unix socket path too long (> %d)", p, socketPathLimit)
 		}
 		l, err = net.Listen("unix", p)
 	}
@@ -307,12 +307,12 @@ func (l *remoteEventsPublisher) Publish(ctx context.Context, topic string, event
 	if err != nil {
 		return err
 	}
-	status, err := reaper.Default.Wait(cmd, c)
+	status, err := reaper.Default.WaitTimeout(cmd, c, 30*time.Second)
 	if err != nil {
-		return errors.Wrapf(err, "failed to publish event: %s", b.String())
+		return fmt.Errorf("failed to publish event: %s: %w", b.String(), err)
 	}
 	if status != 0 {
-		return errors.Errorf("failed to publish event: %s", b.String())
+		return fmt.Errorf("failed to publish event: %s", b.String())
 	}
 	return nil
 }

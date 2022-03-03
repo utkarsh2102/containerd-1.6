@@ -19,7 +19,6 @@ package container
 import (
 	"encoding/json"
 	"errors"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +26,7 @@ import (
 
 	assertlib "github.com/stretchr/testify/assert"
 	requirelib "github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestContainerState(t *testing.T) {
@@ -115,7 +114,7 @@ func TestStatus(t *testing.T) {
 	assert := assertlib.New(t)
 	require := requirelib.New(t)
 
-	tempDir, err := ioutil.TempDir(os.TempDir(), "status-test")
+	tempDir, err := os.MkdirTemp(os.TempDir(), "status-test")
 	require.NoError(err)
 	defer os.RemoveAll(tempDir)
 	statusFile := filepath.Join(tempDir, "status")

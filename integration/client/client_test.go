@@ -22,9 +22,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"testing"
 	"time"
 
@@ -42,6 +40,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/identity"
 	"github.com/sirupsen/logrus"
+	exec "golang.org/x/sys/execabs"
 )
 
 var (
@@ -90,7 +89,7 @@ func TestMain(m *testing.M) {
 	if !noDaemon {
 		sys.ForceRemoveAll(defaultRoot)
 
-		stdioFile, err := ioutil.TempFile("", "")
+		stdioFile, err := os.CreateTemp("", "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not create a new stdio temp file: %s\n", err)
 			os.Exit(1)
@@ -112,6 +111,10 @@ func TestMain(m *testing.M) {
 			fmt.Fprintf(os.Stderr, "%s: %s\n", err, buf.String())
 			os.Exit(1)
 		}
+	} else {
+		// Otherwise if no-daemon was specified we need to connect to an already running ctrd instance.
+		// Set the addr field on the daemon object so it knows what to try connecting to.
+		ctrd.addr = address
 	}
 
 	waitCtx, waitCancel := context.WithTimeout(ctx, 4*time.Second)
@@ -330,7 +333,7 @@ func TestImagePullAllPlatforms(t *testing.T) {
 	defer cancel()
 
 	cs := client.ContentStore()
-	img, err := client.Fetch(ctx, "k8s.gcr.io/pause:3.5")
+	img, err := client.Fetch(ctx, "k8s.gcr.io/pause:3.6")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,7 +383,7 @@ func TestImagePullSomePlatforms(t *testing.T) {
 
 	// Note: Must be different to the image used in TestImagePullAllPlatforms
 	// or it will see the content pulled by that, and fail.
-	img, err := client.Fetch(ctx, "k8s.gcr.io/pause:3.2", opts...)
+	img, err := client.Fetch(ctx, "k8s.gcr.io/e2e-test-images/busybox:1.29-2", opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +500,7 @@ func TestClientReconnect(t *testing.T) {
 }
 
 func createShimDebugConfig() string {
-	f, err := ioutil.TempFile("", "containerd-config-")
+	f, err := os.CreateTemp("", "containerd-config-")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to create config file: %s\n", err)
 		os.Exit(1)

@@ -3,7 +3,7 @@ This document provides the description of the CRI plugin configuration.
 The CRI plugin config is part of the containerd config (default
 path: `/etc/containerd/config.toml`).
 
-See [here](https://github.com/containerd/containerd/blob/master/docs/ops.md)
+See [here](https://github.com/containerd/containerd/blob/main/docs/ops.md)
 for more information about containerd config.
 
 The explanation and default value of each configuration item are as follows:
@@ -40,7 +40,7 @@ version = 2
   selinux_category_range = 1024
 
   # sandbox_image is the image used by sandbox container.
-  sandbox_image = "k8s.gcr.io/pause:3.5"
+  sandbox_image = "k8s.gcr.io/pause:3.6"
 
   # stats_collect_period is the period (in seconds) of snapshots stats collection.
   stats_collect_period = 10
@@ -97,9 +97,28 @@ version = 2
   # when using containerd with Kubernetes <=1.11.
   disable_proc_mount = false
 
-  # unsetSeccompProfile is the profile containerd/cri will use if the provided seccomp profile is
-  # unset (`""`) for a container (default is `unconfined`)
+  # unset_seccomp_profile is the seccomp profile containerd/cri will use if the seccomp
+  # profile requested over CRI is unset (or nil) for a pod/container (otherwise if this field is not set the
+  # default unset profile will map to `unconfined`)
+    # Note: The default unset seccomp profile should not be confused with the seccomp profile
+    # used in CRI when the runtime default seccomp profile is requested. In the later case, the
+    # default is set by the following code (https://github.com/containerd/containerd/blob/main/contrib/seccomp/seccomp_default.go).
+    # To summarize, there are two different seccomp defaults, the unset default used when the CRI request is
+    # set to nil or `unconfined`, and the default used when the runtime default seccomp profile is requested.
   unset_seccomp_profile = ""
+
+  # enable_unprivileged_ports configures net.ipv4.ip_unprivileged_port_start=0
+  # for all containers which are not using host network
+  # and if it is not overwritten by PodSandboxConfig
+  # Note that currently default is set to disabled but target change it in future, see:
+  #   [k8s discussion](https://github.com/kubernetes/kubernetes/issues/102612)
+  enable_unprivileged_ports = false
+
+  # enable_unprivileged_icmp configures net.ipv4.ping_group_range="0 2147483647"
+  # for all containers which are not using host network, are not running in user namespace
+  # and if it is not overwritten by PodSandboxConfig
+  # Note that currently default is set to disabled but target change it in future together with enable_unprivileged_ports
+  enable_unprivileged_icmp = false
 
   # 'plugins."io.containerd.grpc.v1.cri".containerd' contains config related to containerd
   [plugins."io.containerd.grpc.v1.cri".containerd]
@@ -124,14 +143,20 @@ version = 2
     # default_runtime_name is the default runtime name to use.
     default_runtime_name = "runc"
 
+    # ignore_rdt_not_enabled_errors disables RDT related errors when RDT
+    # support has not been enabled. Intel RDT is a technology for cache and
+    # memory bandwidth management. By default, trying to set the RDT class of
+    # a container via annotations produces an error if RDT hasn't been enabled.
+    # This config option practically enables a "soft" mode for RDT where these
+    # errors are ignored and the container gets no RDT class.
+    ignore_rdt_not_enabled_errors = false
+
     # 'plugins."io.containerd.grpc.v1.cri".containerd.default_runtime' is the runtime to use in containerd.
-    # DEPRECATED: use `default_runtime_name` and `plugins."io.containerd.grpc.v1.cri".runtimes` instead.
-    # Remove in containerd 1.4.
+    # DEPRECATED: use `default_runtime_name` and `plugins."io.containerd.grpc.v1.cri".containerd.runtimes` instead.
     [plugins."io.containerd.grpc.v1.cri".containerd.default_runtime]
 
     # 'plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime' is a runtime to run untrusted workloads on it.
-    # DEPRECATED: use `untrusted` runtime in `plugins."io.containerd.grpc.v1.cri".runtimes` instead.
-    # Remove in containerd 1.4.
+    # DEPRECATED: use `untrusted` runtime in `plugins."io.containerd.grpc.v1.cri".containerd.runtimes` instead.
     [plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime]
 
     # 'plugins."io.containerd.grpc.v1.cri".containerd.runtimes' is a map from CRI RuntimeHandler strings, which specify types
@@ -167,9 +192,21 @@ version = 2
       # base_runtime_spec is a file path to a JSON file with the OCI spec that will be used as the base spec that all
       # container's are created from.
       # Use containerd's `ctr oci spec > /etc/containerd/cri-base.json` to output initial spec file.
-      # Spec files are loaded at launch, so containerd daemon must be restared on any changes to refresh default specs.
+      # Spec files are loaded at launch, so containerd daemon must be restarted on any changes to refresh default specs.
       # Still running containers and restarted containers will still be using the original spec from which that container was created.
       base_runtime_spec = ""
+
+      # conf_dir is the directory in which the admin places a CNI conf.
+      # this allows a different CNI conf for the network stack when a different runtime is being used.
+      cni_conf_dir = "/etc/cni/net.d"
+
+      # cni_max_conf_num specifies the maximum number of CNI plugin config files to
+      # load from the CNI config directory. By default, only 1 CNI plugin config
+      # file will be loaded. If you want to load multiple CNI plugin config files
+      # set max_conf_num to the number desired. Setting cni_max_config_num to 0 is
+      # interpreted as no limit is desired and will result in all CNI plugin
+      # config files being loaded from the CNI config directory.
+      cni_max_conf_num = 1
 
       # 'plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options' is options specific to
       # "io.containerd.runc.v1" and "io.containerd.runc.v2". Its corresponding options type is:
@@ -234,13 +271,19 @@ version = 2
     # This will be deprecated when kubenet is deprecated.
     # See the "CNI Config Template" section for more details.
     conf_template = ""
+    # ip_pref specifies the strategy to use when selecting the main IP address for a pod.
+    # options include:
+    # * ipv4, "" - (default) select the first ipv4 address
+    # * ipv6 - select the first ipv6 address
+    # * cni - use the order returned by the CNI plugins, returning the first IP address from the results
+    ip_pref = "ipv4"
 
   # 'plugins."io.containerd.grpc.v1.cri".image_decryption' contains config related
   # to handling decryption of encrypted container images.
   [plugins."io.containerd.grpc.v1.cri".image_decryption]
     # key_model defines the name of the key model used for how the cri obtains
     # keys used for decryption of encrypted container images.
-    # The [decryption document](https://github.com/containerd/cri/blob/master/docs/decryption.md)
+    # The [decryption document](https://github.com/containerd/containerd/blob/main/docs/cri/decryption.md)
     # contains additional information about the key models available.
     #
     # Set of available string options: {"", "node"}
@@ -248,12 +291,12 @@ version = 2
     # disabling image decryption.
     #
     # In order to use the decryption feature, additional configurations must be made.
-    # The [decryption document](https://github.com/containerd/cri/blob/master/docs/decryption.md)
+    # The [decryption document](https://github.com/containerd/containerd/blob/main/docs/cri/decryption.md)
     # provides information of how to set up stream processors and the containerd imgcrypt decoder
     # with the appropriate key models.
     #
     # Additional information:
-    # * Stream processors: https://github.com/containerd/containerd/blob/master/docs/stream_processors.md
+    # * Stream processors: https://github.com/containerd/containerd/blob/main/docs/stream_processors.md
     # * Containerd imgcrypt: https://github.com/containerd/imgcrypt
     key_model = "node"
 

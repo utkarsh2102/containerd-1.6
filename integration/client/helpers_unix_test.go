@@ -1,3 +1,4 @@
+//go:build !windows
 // +build !windows
 
 /*
@@ -22,6 +23,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/oci"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -54,4 +56,16 @@ func withExecExitStatus(s *specs.Process, es int) {
 
 func withExecArgs(s *specs.Process, args ...string) {
 	s.Args = args
+}
+
+func newDirectIO(ctx context.Context, terminal bool) (*directIO, error) {
+	fifos, err := cio.NewFIFOSetInDir("", "", terminal)
+	if err != nil {
+		return nil, err
+	}
+	dio, err := cio.NewDirectIO(ctx, fifos)
+	if err != nil {
+		return nil, err
+	}
+	return &directIO{DirectIO: *dio}, nil
 }

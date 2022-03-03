@@ -21,14 +21,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
-	"github.com/pkg/errors"
 	"gotest.tools/v3/assert"
 )
 
@@ -73,7 +71,7 @@ func TestFetcherOpen(t *testing.T) {
 		if err != nil {
 			t.Fatalf("failed to open: %+v", err)
 		}
-		b, err := ioutil.ReadAll(rc)
+		b, err := io.ReadAll(rc)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -201,9 +199,9 @@ func TestDockerFetcherOpen(t *testing.T) {
 			if tt.wantErr {
 				var expectedError error
 				if tt.wantServerMessageError {
-					expectedError = errors.Errorf("unexpected status code %v/ns: %v %s - Server message: %s", s.URL, tt.mockedStatus, http.StatusText(tt.mockedStatus), tt.mockedErr.Error())
+					expectedError = fmt.Errorf("unexpected status code %v/ns: %v %s - Server message: %s", s.URL, tt.mockedStatus, http.StatusText(tt.mockedStatus), tt.mockedErr.Error())
 				} else if tt.wantPlainError {
-					expectedError = errors.Errorf("unexpected status code %v/ns: %v %s", s.URL, tt.mockedStatus, http.StatusText(tt.mockedStatus))
+					expectedError = fmt.Errorf("unexpected status code %v/ns: %v %s", s.URL, tt.mockedStatus, http.StatusText(tt.mockedStatus))
 				}
 				assert.Equal(t, expectedError.Error(), err.Error())
 

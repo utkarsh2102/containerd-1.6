@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -22,7 +23,6 @@ import (
 	"context"
 	_ "crypto/sha256"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -86,7 +86,7 @@ func TestSnapshotterSuite(t *testing.T) {
 	ctx = namespaces.WithNamespace(ctx, "testsuite")
 
 	t.Run("DevMapperUsage", func(t *testing.T) {
-		tempDir, err := ioutil.TempDir("", "snapshot-suite-usage")
+		tempDir, err := os.MkdirTemp("", "snapshot-suite-usage")
 		assert.NilError(t, err)
 		defer os.RemoveAll(tempDir)
 
@@ -140,8 +140,28 @@ func testUsage(t *testing.T, snapshotter snapshots.Snapshotter) {
 		"%d > %d", layer2Usage.Size, sizeBytes)
 }
 
-func TestMkfs(t *testing.T) {
+func TestMkfsExt4(t *testing.T) {
 	ctx := context.Background()
-	err := mkfs(ctx, "")
+	// We test the default setting which is lazy init is disabled
+	err := mkfs(ctx, "ext4", "nodiscard,lazy_itable_init=0,lazy_journal_init=0", "")
 	assert.ErrorContains(t, err, `mkfs.ext4 couldn't initialize ""`)
+}
+
+func TestMkfsExt4NonDefault(t *testing.T) {
+	ctx := context.Background()
+	// We test a non default setting where we enable lazy init for ext4
+	err := mkfs(ctx, "ext4", "nodiscard", "")
+	assert.ErrorContains(t, err, `mkfs.ext4 couldn't initialize ""`)
+}
+
+func TestMkfsXfs(t *testing.T) {
+	ctx := context.Background()
+	err := mkfs(ctx, "xfs", "", "")
+	assert.ErrorContains(t, err, `mkfs.xfs couldn't initialize ""`)
+}
+
+func TestMkfsXfsNonDefault(t *testing.T) {
+	ctx := context.Background()
+	err := mkfs(ctx, "xfs", "noquota", "")
+	assert.ErrorContains(t, err, `mkfs.xfs couldn't initialize ""`)
 }

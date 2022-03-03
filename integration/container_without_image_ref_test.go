@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -23,30 +21,20 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // Test container lifecycle can work without image references.
 func TestContainerLifecycleWithoutImageRef(t *testing.T) {
 	t.Log("Create a sandbox")
-	sbConfig := PodSandboxConfig("sandbox", "container-lifecycle-without-image-ref")
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "container-lifecycle-without-image-ref")
 
 	var (
 		testImage     = GetImage(BusyBox)
 		containerName = "test-container"
 	)
-	t.Log("Pull test image")
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-	}()
+
+	img := EnsureImageExists(t, testImage)
 
 	t.Log("Create test container")
 	cnConfig := ContainerConfig(

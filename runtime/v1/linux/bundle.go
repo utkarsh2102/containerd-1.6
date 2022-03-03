@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -23,7 +24,6 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -32,7 +32,6 @@ import (
 	"github.com/containerd/containerd/runtime/v1/shim"
 	"github.com/containerd/containerd/runtime/v1/shim/client"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/pkg/errors"
 )
 
 // loadBundle loads an existing bundle from disk
@@ -74,7 +73,7 @@ func newBundle(id, path, workDir string, spec []byte) (b *bundle, err error) {
 	if err := os.MkdirAll(rootfs, 0711); err != nil {
 		return nil, err
 	}
-	err = ioutil.WriteFile(filepath.Join(path, configFilename), spec, 0666)
+	err = os.WriteFile(filepath.Join(path, configFilename), spec, 0666)
 	return &bundle{
 		id:      id,
 		path:    path,
@@ -185,7 +184,7 @@ func (b *bundle) Delete() error {
 	if err2 == nil {
 		return err
 	}
-	return errors.Wrapf(err, "Failed to remove both bundle and workdir locations: %v", err2)
+	return fmt.Errorf("Failed to remove both bundle and workdir locations: %v: %w", err2, err)
 }
 
 func (b *bundle) legacyShimAddress(namespace string) string {
@@ -201,7 +200,7 @@ func (b *bundle) shimAddress(namespace, socketPath string) string {
 
 func (b *bundle) loadAddress() (string, error) {
 	addressPath := filepath.Join(b.path, "address")
-	data, err := ioutil.ReadFile(addressPath)
+	data, err := os.ReadFile(addressPath)
 	if err != nil {
 		return "", err
 	}

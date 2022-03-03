@@ -22,16 +22,21 @@ import (
 	"encoding/json"
 	"io"
 
-	"io/ioutil"
 	"math/rand"
 	"reflect"
+	"runtime"
 	"testing"
+	"time"
 
 	. "github.com/containerd/containerd"
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/archive/tartest"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/images/archive"
+	"github.com/containerd/containerd/leases"
+	"github.com/containerd/containerd/oci"
+	"github.com/containerd/containerd/platforms"
+
 	digest "github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -40,6 +45,18 @@ import (
 // TestExportAndImport exports testImage as a tar stream,
 // and import the tar stream as a new image.
 func TestExportAndImport(t *testing.T) {
+	testExportImport(t, testImage)
+}
+
+// TestExportAndImportMultiLayer exports testMultiLayeredImage as a tar stream,
+// and import the tar stream as a new image. This should ensure that imported
+// images remain sane, and that the Garbage Collector won't delete part of its
+// content.
+func TestExportAndImportMultiLayer(t *testing.T) {
+	testExportImport(t, testMultiLayeredImage)
+}
+
+func testExportImport(t *testing.T, imageName string) {
 	if testing.Short() {
 		t.Skip()
 	}
@@ -52,16 +69,18 @@ func TestExportAndImport(t *testing.T) {
 	}
 	defer client.Close()
 
-	_, err = client.Fetch(ctx, testImage)
+	_, err = client.Fetch(ctx, imageName)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	wb := bytes.NewBuffer(nil)
-	err = client.Export(ctx, wb, archive.WithAllPlatforms(), archive.WithImage(client.ImageService(), testImage))
+	err = client.Export(ctx, wb, archive.WithPlatform(platforms.Default()), archive.WithImage(client.ImageService(), imageName))
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	client.ImageService().Delete(ctx, imageName)
 
 	opts := []ImportOpt{
 		WithImageRefTranslator(archive.AddRefPrefix("foo/bar")),
@@ -70,6 +89,41 @@ func TestExportAndImport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Import failed: %+v", err)
 	}
+
+	// We need to unpack the image, especially if it's multilayered.
+	for _, img := range imgrecs {
+		image := NewImage(client, img)
+
+		// TODO: Show unpack status
+		t.Logf("unpacking %s (%s)...", img.Name, img.Target.Digest)
+		err = image.Unpack(ctx, "")
+		if err != nil {
+			t.Fatalf("Error while unpacking image: %+v", err)
+		}
+		t.Log("done")
+	}
+
+	// we're triggering the Garbage Collector to do its job.
+	ls := client.LeasesService()
+	l, err := ls.Create(ctx, leases.WithRandomID(), leases.WithExpiration(time.Hour))
+	if err != nil {
+		t.Fatalf("Error while creating lease: %+v", err)
+	}
+	if err = ls.Delete(ctx, l, leases.SynchronousDelete); err != nil {
+		t.Fatalf("Error while deleting lease: %+v", err)
+	}
+
+	image, err := client.GetImage(ctx, imageName)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id := t.Name()
+	container, err := client.NewContainer(ctx, id, WithNewSnapshot(id, image), WithNewSpec(oci.WithImageConfig(image)))
+	if err != nil {
+		t.Fatalf("Error while creating container: %+v", err)
+	}
+	container.Delete(ctx, WithSnapshotCleanup)
 
 	for _, imgrec := range imgrecs {
 		if imgrec.Name == testImage {
@@ -86,7 +140,7 @@ func TestImport(t *testing.T) {
 	ctx, cancel := testContext(t)
 	defer cancel()
 
-	client, err := New(address)
+	client, err := newClient(t, address)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,7 +152,8 @@ func TestImport(t *testing.T) {
 	empty := []byte("{}")
 	version := []byte("1.0")
 
-	c1, d2 := createConfig()
+	c1, d2 := createConfig(runtime.GOOS, runtime.GOARCH)
+	badConfig, _ := createConfig("foo", "lish")
 
 	m1, d3, expManifest := createManifest(c1, [][]byte{b1})
 
@@ -171,6 +226,17 @@ func TestImport(t *testing.T) {
 				checkImages(t, imgs[0].Target.Digest, imgs, names...)
 				checkManifest(ctx, t, imgs[0].Target, nil)
 			},
+		},
+		{
+			Name: "DockerV2.1-BadOSArch",
+			Writer: tartest.TarAll(
+				tc.Dir("bd765cd43e95212f7aa2cab51d0a", 0755),
+				tc.File("bd765cd43e95212f7aa2cab51d0a/json", empty, 0644),
+				tc.File("bd765cd43e95212f7aa2cab51d0a/layer.tar", b1, 0644),
+				tc.File("bd765cd43e95212f7aa2cab51d0a/VERSION", version, 0644),
+				tc.File("e95212f7aa2cab51d0abd765cd43.json", badConfig, 0644),
+				tc.File("manifest.json", []byte(`[{"Config":"e95212f7aa2cab51d0abd765cd43.json","RepoTags":["test-import:notlatest", "another/repo:tag"],"Layers":["bd765cd43e95212f7aa2cab51d0a/layer.tar"]}]`), 0644),
+			),
 		},
 		{
 			Name: "OCI-BadFormat",
@@ -285,7 +351,7 @@ func checkImages(t *testing.T, target digest.Digest, actual []images.Image, name
 }
 
 func createContent(size int64, seed int64) ([]byte, digest.Digest) {
-	b, err := ioutil.ReadAll(io.LimitReader(rand.New(rand.NewSource(seed)), size))
+	b, err := io.ReadAll(io.LimitReader(rand.New(rand.NewSource(seed)), size))
 	if err != nil {
 		panic(err)
 	}
@@ -302,10 +368,10 @@ func createContent(size int64, seed int64) ([]byte, digest.Digest) {
 	return b, digest.FromBytes(b)
 }
 
-func createConfig() ([]byte, digest.Digest) {
+func createConfig(osName, archName string) ([]byte, digest.Digest) {
 	image := ocispec.Image{
-		OS:           "any",
-		Architecture: "any",
+		OS:           osName,
+		Architecture: archName,
 		Author:       "test",
 	}
 	b, _ := json.Marshal(image)

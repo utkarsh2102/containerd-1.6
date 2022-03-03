@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -20,14 +18,13 @@ package mount
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
 
 	"github.com/containerd/continuity/testutil"
+	exec "golang.org/x/sys/execabs"
 )
 
 func TestLongestCommonPrefix(t *testing.T) {
@@ -107,7 +104,7 @@ func TestFUSEHelper(t *testing.T) {
 	if err != nil {
 		t.Skip("fuse-overlayfs not installed")
 	}
-	td, err := ioutil.TempDir("", "fuse")
+	td, err := os.MkdirTemp("", "fuse")
 	if err != nil {
 		t.Fatal(err)
 	}

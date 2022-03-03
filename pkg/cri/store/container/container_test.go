@@ -21,13 +21,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/containerd/containerd/errdefs"
+	cio "github.com/containerd/containerd/pkg/cri/io"
 	"github.com/containerd/containerd/pkg/cri/store/label"
+	"github.com/containerd/containerd/pkg/cri/store/stats"
+
 	"github.com/opencontainers/selinux/go-selinux"
 	assertlib "github.com/stretchr/testify/assert"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
-
-	cio "github.com/containerd/containerd/pkg/cri/io"
-	"github.com/containerd/containerd/pkg/cri/store"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestContainerStore(t *testing.T) {
@@ -132,6 +133,25 @@ func TestContainerStore(t *testing.T) {
 			Removing:   true,
 		},
 	}
+
+	stats := map[string]*stats.ContainerStats{
+		"1": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 1,
+		},
+		"2abcd": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 2,
+		},
+		"4a333": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 3,
+		},
+		"4abcd": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 4,
+		},
+	}
 	assert := assertlib.New(t)
 	containers := map[string]Container{}
 	for id := range metadatas {
@@ -163,11 +183,25 @@ func TestContainerStore(t *testing.T) {
 		got, err := s.Get(genTruncIndex(id))
 		assert.NoError(err)
 		assert.Equal(c, got)
+		assert.Nil(c.Stats)
 	}
 
 	t.Logf("should be able to list containers")
 	cs := s.List()
 	assert.Len(cs, len(containers))
+
+	t.Logf("should be able to update stats on container")
+	for id := range containers {
+		err := s.UpdateContainerStats(id, stats[id])
+		assert.NoError(err)
+	}
+
+	// Validate stats were updated
+	cs = s.List()
+	assert.Len(cs, len(containers))
+	for _, c := range cs {
+		assert.Equal(stats[c.ID], c.Stats)
+	}
 
 	if selinux.GetEnabled() {
 		t.Logf("should have reserved labels (requires -tag selinux)")
@@ -183,7 +217,7 @@ func TestContainerStore(t *testing.T) {
 		truncID := genTruncIndex(testID)
 
 		t.Logf("add should return already exists error for duplicated container")
-		assert.Equal(store.ErrAlreadyExist, s.Add(v))
+		assert.Equal(errdefs.ErrAlreadyExists, s.Add(v))
 
 		t.Logf("should be able to delete container")
 		s.Delete(truncID)
@@ -194,7 +228,7 @@ func TestContainerStore(t *testing.T) {
 		t.Logf("get should return not exist error after deletion")
 		c, err := s.Get(truncID)
 		assert.Equal(Container{}, c)
-		assert.Equal(store.ErrNotExist, err)
+		assert.Equal(errdefs.ErrNotFound, err)
 	}
 
 	if selinux.GetEnabled() {

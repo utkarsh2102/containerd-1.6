@@ -19,6 +19,7 @@ package server
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/containerd/containerd"
@@ -27,13 +28,13 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	runtimespec "github.com/opencontainers/runtime-spec/specs-go"
 	selinux "github.com/opencontainers/selinux/go-selinux"
-	"github.com/pkg/errors"
 	"golang.org/x/sys/unix"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/containerd/containerd/pkg/cri/annotations"
 	customopts "github.com/containerd/containerd/pkg/cri/opts"
 	osinterface "github.com/containerd/containerd/pkg/os"
+	"github.com/containerd/containerd/pkg/userns"
 )
 
 func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxConfig,
@@ -54,7 +55,7 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 
 	if len(imageConfig.Entrypoint) == 0 && len(imageConfig.Cmd) == 0 {
 		// Pause image must have entrypoint or cmd.
-		return nil, errors.Errorf("invalid empty entrypoint and cmd in image config %+v", imageConfig)
+		return nil, fmt.Errorf("invalid empty entrypoint and cmd in image config %+v", imageConfig)
 	}
 	specOpts = append(specOpts, oci.WithProcessArgs(append(imageConfig.Entrypoint, imageConfig.Cmd...)...))
 
@@ -118,7 +119,7 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 
 	processLabel, mountLabel, err := initLabelsFromOpt(securityContext.GetSelinuxOptions())
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to init selinux options %+v", securityContext.GetSelinuxOptions())
+		return nil, fmt.Errorf("failed to init selinux options %+v: %w", securityContext.GetSelinuxOptions(), err)
 	}
 	defer func() {
 		if retErr != nil {
@@ -134,6 +135,19 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 
 	// Add sysctls
 	sysctls := config.GetLinux().GetSysctls()
+	if sysctls == nil {
+		sysctls = make(map[string]string)
+	}
+	_, ipUnprivilegedPortStart := sysctls["net.ipv4.ip_unprivileged_port_start"]
+	_, pingGroupRange := sysctls["net.ipv4.ping_group_range"]
+	if nsOptions.GetNetwork() != runtime.NamespaceMode_NODE {
+		if c.config.EnableUnprivilegedPorts && !ipUnprivilegedPortStart {
+			sysctls["net.ipv4.ip_unprivileged_port_start"] = "0"
+		}
+		if c.config.EnableUnprivilegedICMP && !pingGroupRange && !userns.RunningInUserNS() {
+			sysctls["net.ipv4.ping_group_range"] = "0 2147483647"
+		}
+	}
 	specOpts = append(specOpts, customopts.WithSysctls(sysctls))
 
 	// Note: LinuxSandboxSecurityContext does not currently provide an apparmor profile
@@ -141,6 +155,15 @@ func (c *criService) sandboxContainerSpec(id string, config *runtime.PodSandboxC
 	if !c.config.DisableCgroup {
 		specOpts = append(specOpts, customopts.WithDefaultSandboxShares)
 	}
+
+	if res := config.GetLinux().GetResources(); res != nil {
+		specOpts = append(specOpts,
+			customopts.WithAnnotation(annotations.SandboxCPUPeriod, strconv.FormatInt(res.CpuPeriod, 10)),
+			customopts.WithAnnotation(annotations.SandboxCPUQuota, strconv.FormatInt(res.CpuQuota, 10)),
+			customopts.WithAnnotation(annotations.SandboxCPUShares, strconv.FormatInt(res.CpuShares, 10)),
+			customopts.WithAnnotation(annotations.SandboxMem, strconv.FormatInt(res.MemoryLimitInBytes, 10)))
+	}
+
 	specOpts = append(specOpts, customopts.WithPodOOMScoreAdj(int(defaultSandboxOOMAdj), c.config.RestrictOOMScoreAdj))
 
 	for pKey, pValue := range getPassthroughAnnotations(config.Annotations,
@@ -173,7 +196,7 @@ func (c *criService) sandboxContainerSpecOpts(config *runtime.PodSandboxConfig, 
 			securityContext.GetSeccompProfilePath(), //nolint:staticcheck // Deprecated but we don't want to remove yet
 			c.config.UnsetSeccompProfile)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to generate seccomp spec opts")
+			return nil, fmt.Errorf("failed to generate seccomp spec opts: %w", err)
 		}
 	}
 	seccompSpecOpts, err := c.generateSeccompSpecOpts(
@@ -181,7 +204,7 @@ func (c *criService) sandboxContainerSpecOpts(config *runtime.PodSandboxConfig, 
 		securityContext.GetPrivileged(),
 		c.seccompEnabled())
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate seccomp spec opts")
+		return nil, fmt.Errorf("failed to generate seccomp spec opts: %w", err)
 	}
 	if seccompSpecOpts != nil {
 		specOpts = append(specOpts, seccompSpecOpts)
@@ -193,7 +216,7 @@ func (c *criService) sandboxContainerSpecOpts(config *runtime.PodSandboxConfig, 
 		securityContext.GetRunAsGroup(),
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to generate user string")
+		return nil, fmt.Errorf("failed to generate user string: %w", err)
 	}
 	if userstr == "" {
 		// Lastly, since no user override was passed via CRI try to set via OCI
@@ -215,17 +238,17 @@ func (c *criService) setupSandboxFiles(id string, config *runtime.PodSandboxConf
 		var err error
 		hostname, err = c.os.Hostname()
 		if err != nil {
-			return errors.Wrap(err, "failed to get hostname")
+			return fmt.Errorf("failed to get hostname: %w", err)
 		}
 	}
 	if err := c.os.WriteFile(sandboxEtcHostname, []byte(hostname+"\n"), 0644); err != nil {
-		return errors.Wrapf(err, "failed to write hostname to %q", sandboxEtcHostname)
+		return fmt.Errorf("failed to write hostname to %q: %w", sandboxEtcHostname, err)
 	}
 
 	// TODO(random-liu): Consider whether we should maintain /etc/hosts and /etc/resolv.conf in kubelet.
 	sandboxEtcHosts := c.getSandboxHosts(id)
 	if err := c.os.CopyFile(etcHosts, sandboxEtcHosts, 0644); err != nil {
-		return errors.Wrapf(err, "failed to generate sandbox hosts file %q", sandboxEtcHosts)
+		return fmt.Errorf("failed to generate sandbox hosts file %q: %w", sandboxEtcHosts, err)
 	}
 
 	// Set DNS options. Maintain a resolv.conf for the sandbox.
@@ -234,7 +257,7 @@ func (c *criService) setupSandboxFiles(id string, config *runtime.PodSandboxConf
 	if dnsConfig := config.GetDnsConfig(); dnsConfig != nil {
 		resolvContent, err = parseDNSOptions(dnsConfig.Servers, dnsConfig.Searches, dnsConfig.Options)
 		if err != nil {
-			return errors.Wrapf(err, "failed to parse sandbox DNSConfig %+v", dnsConfig)
+			return fmt.Errorf("failed to parse sandbox DNSConfig %+v: %w", dnsConfig, err)
 		}
 	}
 	resolvPath := c.getResolvPath(id)
@@ -242,28 +265,28 @@ func (c *criService) setupSandboxFiles(id string, config *runtime.PodSandboxConf
 		// copy host's resolv.conf to resolvPath
 		err = c.os.CopyFile(resolvConfPath, resolvPath, 0644)
 		if err != nil {
-			return errors.Wrapf(err, "failed to copy host's resolv.conf to %q", resolvPath)
+			return fmt.Errorf("failed to copy host's resolv.conf to %q: %w", resolvPath, err)
 		}
 	} else {
 		err = c.os.WriteFile(resolvPath, []byte(resolvContent), 0644)
 		if err != nil {
-			return errors.Wrapf(err, "failed to write resolv content to %q", resolvPath)
+			return fmt.Errorf("failed to write resolv content to %q: %w", resolvPath, err)
 		}
 	}
 
 	// Setup sandbox /dev/shm.
 	if config.GetLinux().GetSecurityContext().GetNamespaceOptions().GetIpc() == runtime.NamespaceMode_NODE {
 		if _, err := c.os.Stat(devShm); err != nil {
-			return errors.Wrapf(err, "host %q is not available for host ipc", devShm)
+			return fmt.Errorf("host %q is not available for host ipc: %w", devShm, err)
 		}
 	} else {
 		sandboxDevShm := c.getSandboxDevShm(id)
 		if err := c.os.MkdirAll(sandboxDevShm, 0700); err != nil {
-			return errors.Wrap(err, "failed to create sandbox shm")
+			return fmt.Errorf("failed to create sandbox shm: %w", err)
 		}
 		shmproperty := fmt.Sprintf("mode=1777,size=%d", defaultShmSize)
 		if err := c.os.(osinterface.UNIX).Mount("shm", sandboxDevShm, "tmpfs", uintptr(unix.MS_NOEXEC|unix.MS_NOSUID|unix.MS_NODEV), shmproperty); err != nil {
-			return errors.Wrap(err, "failed to mount sandbox shm")
+			return fmt.Errorf("failed to mount sandbox shm: %w", err)
 		}
 	}
 
@@ -296,10 +319,10 @@ func (c *criService) cleanupSandboxFiles(id string, config *runtime.PodSandboxCo
 	if config.GetLinux().GetSecurityContext().GetNamespaceOptions().GetIpc() != runtime.NamespaceMode_NODE {
 		path, err := c.os.FollowSymlinkInScope(c.getSandboxDevShm(id), "/")
 		if err != nil {
-			return errors.Wrap(err, "failed to follow symlink")
+			return fmt.Errorf("failed to follow symlink: %w", err)
 		}
 		if err := c.os.(osinterface.UNIX).Unmount(path); err != nil && !os.IsNotExist(err) {
-			return errors.Wrapf(err, "failed to unmount %q", path)
+			return fmt.Errorf("failed to unmount %q: %w", path, err)
 		}
 	}
 	return nil

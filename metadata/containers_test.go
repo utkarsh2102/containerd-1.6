@@ -18,8 +18,8 @@ package metadata
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,7 +35,6 @@ import (
 	"github.com/containerd/typeurl"
 	"github.com/gogo/protobuf/types"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -640,7 +639,7 @@ func TestContainersCreateUpdateDelete(t *testing.T) {
 				if testcase.createerr == nil {
 					t.Fatalf("unexpected error: %v", err)
 				} else {
-					t.Fatalf("cause of %v (cause: %v) != %v", err, errors.Cause(err), testcase.createerr)
+					t.Fatalf("cause of %v (cause: %v) != %v", err, errors.Unwrap(err), testcase.createerr)
 				}
 			} else if testcase.createerr != nil {
 				return
@@ -662,7 +661,7 @@ func TestContainersCreateUpdateDelete(t *testing.T) {
 				if testcase.cause == nil {
 					t.Fatalf("unexpected error: %v", err)
 				} else {
-					t.Fatalf("cause of %v (cause: %v) != %v", err, errors.Cause(err), testcase.cause)
+					t.Fatalf("cause of %v (cause: %v) != %v", err, errors.Unwrap(err), testcase.cause)
 				}
 			} else if testcase.cause != nil {
 				return
@@ -715,7 +714,7 @@ func testEnv(t *testing.T) (context.Context, *bolt.DB, func()) {
 	ctx = namespaces.WithNamespace(ctx, "testing")
 	ctx = logtest.WithT(ctx, t)
 
-	dirname, err := ioutil.TempDir("", strings.Replace(t.Name(), "/", "_", -1)+"-")
+	dirname, err := os.MkdirTemp("", strings.Replace(t.Name(), "/", "_", -1)+"-")
 	if err != nil {
 		t.Fatal(err)
 	}

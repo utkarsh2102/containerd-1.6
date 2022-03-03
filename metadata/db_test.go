@@ -19,9 +19,9 @@ package metadata
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -44,7 +44,6 @@ import (
 	"github.com/gogo/protobuf/types"
 	digest "github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pkg/errors"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -74,7 +73,7 @@ func testDB(t *testing.T, opt ...testOpt) (context.Context, *DB, func()) {
 		o(&topts)
 	}
 
-	dirname, err := ioutil.TempDir("", strings.Replace(t.Name(), "/", "_", -1)+"-")
+	dirname, err := os.MkdirTemp("", strings.Replace(t.Name(), "/", "_", -1)+"-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +208,7 @@ func TestMigrations(t *testing.T) {
 			check: func(tx *bolt.Tx) error {
 				bkt := getSnapshotterBucket(tx, "testing", "testing")
 				if bkt == nil {
-					return errors.Wrap(errdefs.ErrNotFound, "snapshots bucket not found")
+					return fmt.Errorf("snapshots bucket not found: %w", errdefs.ErrNotFound)
 				}
 				snapshots := []struct {
 					key      string
@@ -236,7 +235,7 @@ func TestMigrations(t *testing.T) {
 				for _, s := range snapshots {
 					sbkt := bkt.Bucket([]byte(s.key))
 					if sbkt == nil {
-						return errors.Wrap(errdefs.ErrNotFound, "key does not exist")
+						return fmt.Errorf("key does not exist: %w", errdefs.ErrNotFound)
 					}
 
 					cbkt := sbkt.Bucket(bucketKeyChildren)
@@ -246,12 +245,12 @@ func TestMigrations(t *testing.T) {
 					}
 
 					if cn != len(s.children) {
-						return errors.Errorf("unexpected number of children %d, expected %d", cn, len(s.children))
+						return fmt.Errorf("unexpected number of children %d, expected %d", cn, len(s.children))
 					}
 
 					for _, ch := range s.children {
 						if v := cbkt.Get([]byte(ch)); v == nil {
-							return errors.Errorf("missing child record for %s", ch)
+							return fmt.Errorf("missing child record for %s", ch)
 						}
 					}
 				}
@@ -278,18 +277,18 @@ func TestMigrations(t *testing.T) {
 			check: func(tx *bolt.Tx) error {
 				bkt := getIngestsBucket(tx, "testing")
 				if bkt == nil {
-					return errors.Wrap(errdefs.ErrNotFound, "ingests bucket not found")
+					return fmt.Errorf("ingests bucket not found: %w", errdefs.ErrNotFound)
 				}
 
 				for _, s := range testRefs {
 					sbkt := bkt.Bucket([]byte(s.ref))
 					if sbkt == nil {
-						return errors.Wrap(errdefs.ErrNotFound, "ref does not exist")
+						return fmt.Errorf("ref does not exist: %w", errdefs.ErrNotFound)
 					}
 
 					bref := string(sbkt.Get(bucketKeyRef))
 					if bref != s.bref {
-						return errors.Errorf("unexpected reference key %q, expected %q", bref, s.bref)
+						return fmt.Errorf("unexpected reference key %q, expected %q", bref, s.bref)
 					}
 				}
 
@@ -346,11 +345,11 @@ func readDBVersion(db *bolt.DB, schema []byte) (int, error) {
 	if err := db.View(func(tx *bolt.Tx) error {
 		bkt := tx.Bucket(schema)
 		if bkt == nil {
-			return errors.Wrap(errdefs.ErrNotFound, "no version bucket")
+			return fmt.Errorf("no version bucket: %w", errdefs.ErrNotFound)
 		}
 		vb := bkt.Get(bucketKeyDBVersion)
 		if vb == nil {
-			return errors.Wrap(errdefs.ErrNotFound, "no version value")
+			return fmt.Errorf("no version value: %w", errdefs.ErrNotFound)
 		}
 		v, _ := binary.Varint(vb)
 		version = int(v)
@@ -589,13 +588,13 @@ func create(obj object, tx *bolt.Tx, db *DB, cs content.Store, sn snapshots.Snap
 			content.WithRef("test-ref"),
 			content.WithDescriptor(ocispec.Descriptor{Size: int64(len(v.data)), Digest: expected}))
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to create writer")
+			return nil, fmt.Errorf("failed to create writer: %w", err)
 		}
 		if _, err := w.Write(v.data); err != nil {
-			return nil, errors.Wrap(err, "write blob failed")
+			return nil, fmt.Errorf("write blob failed: %w", err)
 		}
 		if err := w.Commit(ctx, int64(len(v.data)), expected, content.WithLabels(obj.labels)); err != nil {
-			return nil, errors.Wrap(err, "failed to commit blob")
+			return nil, fmt.Errorf("failed to commit blob: %w", err)
 		}
 		if !obj.removed {
 			node = &gc.Node{
@@ -636,7 +635,7 @@ func create(obj object, tx *bolt.Tx, db *DB, cs content.Store, sn snapshots.Snap
 
 		_, err := NewImageStore(db).Create(ctx, image)
 		if err != nil {
-			return nil, errors.Wrap(err, "failed to create image")
+			return nil, fmt.Errorf("failed to create image: %w", err)
 		}
 	case testContainer:
 		container := containers.Container{
@@ -765,7 +764,7 @@ type testLease struct {
 }
 
 func newStores(t testing.TB) (*DB, content.Store, snapshots.Snapshotter, func()) {
-	td, err := ioutil.TempDir("", "gc-test-")
+	td, err := os.MkdirTemp("", "gc-test-")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,7 +19,7 @@ package command
 import (
 	gocontext "context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"os"
 	"os/signal"
@@ -30,12 +30,13 @@ import (
 	"github.com/containerd/containerd/defaults"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/log"
+	_ "github.com/containerd/containerd/metrics" // import containerd build info
 	"github.com/containerd/containerd/mount"
 	"github.com/containerd/containerd/services/server"
 	srvconfig "github.com/containerd/containerd/services/server/config"
 	"github.com/containerd/containerd/sys"
+	"github.com/containerd/containerd/tracing"
 	"github.com/containerd/containerd/version"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc/grpclog"
@@ -53,7 +54,7 @@ high performance container runtime
 
 func init() {
 	// Discard grpc logs so that they don't mess with our stdio
-	grpclog.SetLoggerV2(grpclog.NewLoggerV2(ioutil.Discard, ioutil.Discard, ioutil.Discard))
+	grpclog.SetLoggerV2(grpclog.NewLoggerV2(io.Discard, io.Discard, io.Discard))
 
 	cli.VersionPrinter = func(c *cli.Context) {
 		fmt.Println(c.App.Name, version.Package, c.App.Version, version.Revision)
@@ -108,12 +109,14 @@ can be used and modified as necessary as a custom configuration.`
 	}
 	app.Action = func(context *cli.Context) error {
 		var (
-			start   = time.Now()
-			signals = make(chan os.Signal, 2048)
-			serverC = make(chan *server.Server, 1)
-			ctx     = gocontext.Background()
-			config  = defaultConfig()
+			start       = time.Now()
+			signals     = make(chan os.Signal, 2048)
+			serverC     = make(chan *server.Server, 1)
+			ctx, cancel = gocontext.WithCancel(gocontext.Background())
+			config      = defaultConfig()
 		)
+
+		defer cancel()
 
 		// Only try to load the config if it either exists, or the user explicitly
 		// told us to load this path.
@@ -144,14 +147,14 @@ can be used and modified as necessary as a custom configuration.`
 			return nil
 		}
 
-		done := handleSignals(ctx, signals, serverC)
+		done := handleSignals(ctx, signals, serverC, cancel)
 		// start the signal handler as soon as we can to make sure that
 		// we don't miss any signals during boot
 		signal.Notify(signals, handledSignals...)
 
 		// cleanup temp mounts
 		if err := mount.SetTempMountLocation(filepath.Join(config.Root, "tmpmounts")); err != nil {
-			return errors.Wrap(err, "creating temp mount location")
+			return fmt.Errorf("creating temp mount location: %w", err)
 		}
 		// unmount all temp mounts on boot for the server
 		warnings, err := mount.CleanupTempMounts(0)
@@ -163,7 +166,7 @@ can be used and modified as necessary as a custom configuration.`
 		}
 
 		if config.GRPC.Address == "" {
-			return errors.Wrap(errdefs.ErrInvalidArgument, "grpc address cannot be empty")
+			return fmt.Errorf("grpc address cannot be empty: %w", errdefs.ErrInvalidArgument)
 		}
 		if config.TTRPC.Address == "" {
 			// If TTRPC was not explicitly configured, use defaults based on GRPC.
@@ -176,27 +179,66 @@ can be used and modified as necessary as a custom configuration.`
 			"revision": version.Revision,
 		}).Info("starting containerd")
 
-		server, err := server.New(ctx, config)
-		if err != nil {
-			return err
+		type srvResp struct {
+			s   *server.Server
+			err error
 		}
 
-		// Launch as a Windows Service if necessary
-		if err := launchService(server, done); err != nil {
-			logrus.Fatal(err)
+		// run server initialization in a goroutine so we don't end up blocking important things like SIGTERM handling
+		// while the server is initializing.
+		// As an example opening the bolt database will block forever if another containerd is already running and containerd
+		// will have to be be `kill -9`'ed to recover.
+		chsrv := make(chan srvResp)
+		go func() {
+			defer close(chsrv)
+
+			server, err := server.New(ctx, config)
+			if err != nil {
+				select {
+				case chsrv <- srvResp{err: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
+
+			// Launch as a Windows Service if necessary
+			if err := launchService(server, done); err != nil {
+				logrus.Fatal(err)
+			}
+			select {
+			case <-ctx.Done():
+				server.Stop()
+			case chsrv <- srvResp{s: server}:
+			}
+		}()
+
+		var server *server.Server
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case r := <-chsrv:
+			if r.err != nil {
+				return r.err
+			}
+			server = r.s
 		}
 
-		serverC <- server
+		// We don't send the server down serverC directly in the goroutine above because we need it lower down.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case serverC <- server:
+		}
 
 		if config.Debug.Address != "" {
 			var l net.Listener
 			if isLocalAddress(config.Debug.Address) {
 				if l, err = sys.GetLocalListener(config.Debug.Address, config.Debug.UID, config.Debug.GID); err != nil {
-					return errors.Wrapf(err, "failed to get listener for debug endpoint")
+					return fmt.Errorf("failed to get listener for debug endpoint: %w", err)
 				}
 			} else {
 				if l, err = net.Listen("tcp", config.Debug.Address); err != nil {
-					return errors.Wrapf(err, "failed to get listener for debug endpoint")
+					return fmt.Errorf("failed to get listener for debug endpoint: %w", err)
 				}
 			}
 			serve(ctx, l, server.ServeDebug)
@@ -204,28 +246,28 @@ can be used and modified as necessary as a custom configuration.`
 		if config.Metrics.Address != "" {
 			l, err := net.Listen("tcp", config.Metrics.Address)
 			if err != nil {
-				return errors.Wrapf(err, "failed to get listener for metrics endpoint")
+				return fmt.Errorf("failed to get listener for metrics endpoint: %w", err)
 			}
 			serve(ctx, l, server.ServeMetrics)
 		}
 		// setup the ttrpc endpoint
 		tl, err := sys.GetLocalListener(config.TTRPC.Address, config.TTRPC.UID, config.TTRPC.GID)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get listener for main ttrpc endpoint")
+			return fmt.Errorf("failed to get listener for main ttrpc endpoint: %w", err)
 		}
 		serve(ctx, tl, server.ServeTTRPC)
 
 		if config.GRPC.TCPAddress != "" {
 			l, err := net.Listen("tcp", config.GRPC.TCPAddress)
 			if err != nil {
-				return errors.Wrapf(err, "failed to get listener for TCP grpc endpoint")
+				return fmt.Errorf("failed to get listener for TCP grpc endpoint: %w", err)
 			}
 			serve(ctx, l, server.ServeTCP)
 		}
 		// setup the main grpc endpoint
 		l, err := sys.GetLocalListener(config.GRPC.Address, config.GRPC.UID, config.GRPC.GID)
 		if err != nil {
-			return errors.Wrapf(err, "failed to get listener for main endpoint")
+			return fmt.Errorf("failed to get listener for main endpoint: %w", err)
 		}
 		serve(ctx, l, server.ServeGRPC)
 
@@ -260,6 +302,8 @@ func applyFlags(context *cli.Context, config *srvconfig.Config) error {
 	if err := setLogFormat(config); err != nil {
 		return err
 	}
+	setLogHooks()
+
 	for _, v := range []struct {
 		name string
 		d    *string
@@ -319,10 +363,14 @@ func setLogFormat(config *srvconfig.Config) error {
 			TimestampFormat: log.RFC3339NanoFixed,
 		})
 	default:
-		return errors.Errorf("unknown log format: %s", f)
+		return fmt.Errorf("unknown log format: %s", f)
 	}
 
 	return nil
+}
+
+func setLogHooks() {
+	logrus.StandardLogger().AddHook(tracing.NewLogrusHook())
 }
 
 func dumpStacks(writeToFile bool) {

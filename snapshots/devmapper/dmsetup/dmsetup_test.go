@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -19,7 +20,6 @@
 package dmsetup
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -43,7 +43,7 @@ const (
 func TestDMSetup(t *testing.T) {
 	testutil.RequiresRoot(t)
 
-	tempDir, err := ioutil.TempDir("", "dmsetup-tests-")
+	tempDir, err := os.MkdirTemp("", "dmsetup-tests-")
 	assert.NilError(t, err, "failed to make temp dir for tests")
 
 	defer func() {
@@ -83,6 +83,7 @@ func TestDMSetup(t *testing.T) {
 	t.Run("ActivateDevice", testActivateDevice)
 	t.Run("DeviceStatus", testDeviceStatus)
 	t.Run("SuspendResumeDevice", testSuspendResumeDevice)
+	t.Run("DiscardBlocks", testDiscardBlocks)
 	t.Run("RemoveDevice", testRemoveDevice)
 
 	t.Run("RemovePool", func(t *testing.T) {
@@ -169,6 +170,11 @@ func testSuspendResumeDevice(t *testing.T) {
 	assert.NilError(t, err)
 }
 
+func testDiscardBlocks(t *testing.T) {
+	err := DiscardBlocks(testDeviceName)
+	assert.NilError(t, err, "failed to discard blocks")
+}
+
 func testRemoveDevice(t *testing.T) {
 	err := RemoveDevice(testPoolName)
 	assert.Assert(t, err == unix.EBUSY, "removing thin-pool with dependencies shouldn't be allowed")
@@ -184,7 +190,7 @@ func testVersion(t *testing.T) {
 }
 
 func createLoopbackDevice(t *testing.T, dir string) (string, string) {
-	file, err := ioutil.TempFile(dir, "dmsetup-tests-")
+	file, err := os.CreateTemp(dir, "dmsetup-tests-")
 	assert.NilError(t, err)
 
 	size, err := units.RAMInBytes("16Mb")

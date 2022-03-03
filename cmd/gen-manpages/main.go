@@ -19,7 +19,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -57,13 +56,12 @@ func run() error {
 
 	// clear out the usage as we use banners that do not display in man pages
 	appName.Usage = ""
-	appName.ToMan()
 	data, err := appName.ToMan()
 	if err != nil {
 		return err
 	}
 	_ = os.MkdirAll(dir, os.ModePerm)
-	if err := ioutil.WriteFile(filepath.Join(dir, fmt.Sprintf("%s.%s", name, section)), []byte(data), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, fmt.Sprintf("%s.%s", name, section)), []byte(data), 0644); err != nil {
 		return err
 	}
 	return nil

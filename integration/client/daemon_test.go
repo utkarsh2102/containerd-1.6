@@ -18,13 +18,15 @@ package client
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
-	"os/exec"
+	"runtime"
 	"sync"
 	"syscall"
 
 	. "github.com/containerd/containerd"
-	"github.com/pkg/errors"
+	exec "golang.org/x/sys/execabs"
 )
 
 type daemon struct {
@@ -45,7 +47,7 @@ func (d *daemon) start(name, address string, args []string, stdout, stderr io.Wr
 	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		cmd.Wait()
-		return errors.Wrap(err, "failed to start daemon")
+		return fmt.Errorf("failed to start daemon: %w", err)
 	}
 	d.addr = address
 	d.cmd = cmd
@@ -110,9 +112,13 @@ func (d *daemon) Restart(stopCb func()) error {
 		return errors.New("daemon is not running")
 	}
 
+	signal := syscall.SIGTERM
+	if runtime.GOOS == "windows" {
+		signal = syscall.SIGKILL
+	}
 	var err error
-	if err = d.cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		return errors.Wrap(err, "failed to signal daemon")
+	if err = d.cmd.Process.Signal(signal); err != nil {
+		return fmt.Errorf("failed to signal daemon: %w", err)
 	}
 
 	d.cmd.Wait()
@@ -126,7 +132,7 @@ func (d *daemon) Restart(stopCb func()) error {
 	cmd.Stderr = d.cmd.Stderr
 	if err := cmd.Start(); err != nil {
 		cmd.Wait()
-		return errors.Wrap(err, "failed to start new daemon instance")
+		return fmt.Errorf("failed to start new daemon instance: %w", err)
 	}
 	d.cmd = cmd
 

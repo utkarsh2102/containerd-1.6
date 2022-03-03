@@ -1,3 +1,4 @@
+//go:build !windows && !linux
 // +build !windows,!linux
 
 /*
@@ -19,7 +20,7 @@
 package netns
 
 import (
-	"github.com/pkg/errors"
+	"errors"
 )
 
 var errNotImplementedOnUnix = errors.New("not implemented on unix")

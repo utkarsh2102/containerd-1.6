@@ -1,17 +1,30 @@
 
 # Registry Configuration - Introduction
 
-Configuring registries will be done by specifying (optionally) a `hosts.toml` file for
-each desired registry host in a configuration directory. **Note**: Updates under this directory
-do not require restarting the containerd daemon.
+New and additional registry hosts config support has been implemented in containerd v1.5 for the `ctr`
+client (the containerd tool for admins/developers), containerd image service clients, and CRI clients
+such as `kubectl` and `crictl`.
+
+Configuring registries, for these clients, will be done by specifying (optionally) a `hosts.toml` file for
+each desired registry host in a configuration directory. **Note**: Updates under this directory do not
+require restarting the containerd daemon.
+
+## Registry API Support
+
+All configured registry hosts are expected to comply with the [OCI Distribution Specification](https://github.com/opencontainers/distribution-spec).
+Registries which are non-compliant or implement non-standard behavior are not guaranteed
+to be supported and may break unexpectedly between releases.
+
+Currently supported OCI Distribution version: **[v1.0.0](https://github.com/opencontainers/distribution-spec/tree/v1.0.0)**
 
 ## Specifying the Configuration Directory
 
 ### Using Host Namespace Configs with CTR
 
-When pulling via `ctr` use the `--hosts-dir` option:
+When pulling a container image via `ctr` using the `--hosts-dir` option tells `ctr`
+to find and use the host configuration files located in the specified path:
 ```
-ctr images pull --hosts-dir "/etc/containerd/certs.d"
+ctr images pull --hosts-dir "/etc/containerd/certs.d" myregistry.io:5000/image_name:tag
 ```
 
 ### CRI
@@ -37,7 +50,7 @@ A registry host is the location where container images and artifacts are sourced
 registry hosts may be local or remote and are typically accessed via http/https using the
 [OCI distribution specification](https://github.com/opencontainers/distribution-spec/blob/main/spec.md).
 A registry mirror is not a registry host but these mirrors can also be used to pull content.
-Registry hosts are typically refered to by their internet domain names, aka. registry
+Registry hosts are typically referred to by their internet domain names, aka. registry
 host names. For example, docker.io, quay.io, gcr.io, and ghcr.io.
 
 A registry host namespace is, for the purpose of containerd registry configuration, a
@@ -101,7 +114,7 @@ OPTIONS:
 
 Although we have deprecated the old CRI config pattern for specifying registry.mirrors
 and registry.configs you can still specify your credentials via
-[CRI config](https://github.com/containerd/containerd/blob/master/docs/cri/registry.md#configure-registry-credentials).
+[CRI config](https://github.com/containerd/containerd/blob/main/docs/cri/registry.md#configure-registry-credentials).
 
 Additionally, the containerd CRI plugin implements/supports the authentication parameters passed in through CRI pull image service requests.
 For example, when containerd is the container runtime implementation for `Kubernetes`, the containerd CRI plugin receives
@@ -235,8 +248,10 @@ client = [["/etc/certs/client.cert", "/etc/certs/client.key"],["/etc/certs/clien
 
 ## skip_verify field
 
-`skip_verify` set this flag to `true` to skip the registry certificate
-verification for this registry host namespace. (Defaults to `false`)
+`skip_verify` skips verifications of the registry's certificate chain and
+host name when set to `true`. This should only be used for testing or in
+combination with other method of verifying connections. (Defaults to `false`)
+
 ```
 skip_verify = false
 ```
@@ -262,6 +277,17 @@ or
 [header]
   x-custom-1 = "custom header",
   x-custom-1-2 = "another custom header"
+```
+
+## override_path field
+
+`override_path` is used to indicate the host's API root endpoint is defined
+in the URL path rather than by the API specification. This may be used with
+non-compliant OCI registries which are missing the `/v2` prefix.
+(Defaults to `false`)
+
+```
+override_path = true
 ```
 
 ## host field(s) (in the toml table format)
@@ -300,6 +326,10 @@ for this registry host namespace:
 
 [host."https://test-3.registry"]
   client = ["/etc/certs/client-1.pem", "/etc/certs/client-2.pem"]
+
+[host."https://non-compliant-mirror.registry/v2/upstream"]
+  capabilities = ["pull"]
+  override_path = true
 ```
 
 **Note**: Recursion is not supported in the specification of host mirror

@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,49 +17,45 @@
 package integration
 
 import (
-	"io/ioutil"
 	"net"
 	"os"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestPodDualStack(t *testing.T) {
-	testPodLogDir, err := ioutil.TempDir("/tmp", "dualstack")
+	testPodLogDir, err := os.MkdirTemp("/tmp", "dualstack")
 	require.NoError(t, err)
 	defer os.RemoveAll(testPodLogDir)
 
 	t.Log("Create a sandbox")
-	sbConfig := PodSandboxConfig("sandbox", "dualstack", WithPodLogDirectory(testPodLogDir))
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "dualstack", WithPodLogDirectory(testPodLogDir))
 
 	var (
 		testImage     = GetImage(BusyBox)
 		containerName = "test-container"
 	)
-	t.Logf("Pull test image %q", testImage)
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-	}()
+
+	EnsureImageExists(t, testImage)
 
 	t.Log("Create a container to print env")
+	var command ContainerOpts
+	if goruntime.GOOS == "windows" {
+		command = WithCommand("ipconfig")
+	} else {
+		command = WithCommand("ip", "address", "show", "dev", "eth0")
+	}
 	cnConfig := ContainerConfig(
 		containerName,
 		testImage,
-		WithCommand("ip", "address", "show", "dev", "eth0"),
+		command,
 		WithLogPath(containerName),
 	)
 	cn, err := runtimeService.CreateContainer(sb, cnConfig, sbConfig)
@@ -82,16 +76,25 @@ func TestPodDualStack(t *testing.T) {
 		return false, nil
 	}, time.Second, 30*time.Second))
 
-	content, err := ioutil.ReadFile(filepath.Join(testPodLogDir, containerName))
+	content, err := os.ReadFile(filepath.Join(testPodLogDir, containerName))
 	assert.NoError(t, err)
 	status, err := runtimeService.PodSandboxStatus(sb)
 	require.NoError(t, err)
 	ip := status.GetNetwork().GetIp()
 	additionalIps := status.GetNetwork().GetAdditionalIps()
 
-	ipv4Enabled, err := regexp.MatchString("inet .* scope global", string(content))
+	var ipv4Regex, ipv6Regex string
+	if goruntime.GOOS == "windows" {
+		ipv4Regex = "^\\s*IPv4 Address"
+		ipv6Regex = "^\\s*IPv6 Address"
+	} else {
+		ipv4Regex = "inet .* scope global"
+		ipv6Regex = "inet6 .* scope global"
+	}
+
+	ipv4Enabled, err := regexp.MatchString(ipv4Regex, string(content))
 	assert.NoError(t, err)
-	ipv6Enabled, err := regexp.MatchString("inet6 .* scope global", string(content))
+	ipv6Enabled, err := regexp.MatchString(ipv6Regex, string(content))
 	assert.NoError(t, err)
 
 	if ipv4Enabled && ipv6Enabled {
