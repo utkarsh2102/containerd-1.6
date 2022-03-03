@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -22,7 +23,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -455,7 +455,7 @@ func TestCheckpointRestoreWithImagePath(t *testing.T) {
 	}
 
 	// create image path store criu image files
-	crDir, err := ioutil.TempDir("", "test-cr")
+	crDir, err := os.MkdirTemp("", "test-cr")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -473,7 +473,7 @@ func TestCheckpointRestoreWithImagePath(t *testing.T) {
 	task.Delete(ctx)
 
 	// check image files have been dumped into image path
-	if files, err := ioutil.ReadDir(imagePath); err != nil || len(files) == 0 {
+	if files, err := os.ReadDir(imagePath); err != nil || len(files) == 0 {
 		t.Fatal("failed to checkpoint with image path set")
 	}
 

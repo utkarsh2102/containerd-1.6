@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -33,10 +34,9 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	runtimespec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/containerd/containerd/pkg/cap"
 	"github.com/containerd/containerd/pkg/cri/annotations"
@@ -90,6 +90,7 @@ func getCreateContainerTestData() (*runtime.ContainerConfig, *runtime.PodSandbox
 				OomScoreAdj:        500,
 				CpusetCpus:         "0-1",
 				CpusetMems:         "2-3",
+				Unified:            map[string]string{"memory.min": "65536", "memory.swap.max": "1024"},
 			},
 			SecurityContext: &runtime.LinuxContainerSecurityContext{
 				SupplementalGroups: []int64{1111, 2222},
@@ -136,6 +137,7 @@ func getCreateContainerTestData() (*runtime.ContainerConfig, *runtime.PodSandbox
 		assert.EqualValues(t, *spec.Linux.Resources.CPU.Shares, 300)
 		assert.EqualValues(t, spec.Linux.Resources.CPU.Cpus, "0-1")
 		assert.EqualValues(t, spec.Linux.Resources.CPU.Mems, "2-3")
+		assert.EqualValues(t, spec.Linux.Resources.Unified, map[string]string{"memory.min": "65536", "memory.swap.max": "1024"})
 		assert.EqualValues(t, *spec.Linux.Resources.Memory.Limit, 400)
 		assert.EqualValues(t, *spec.Process.OOMScoreAdj, 500)
 
@@ -1312,6 +1314,72 @@ func TestGenerateUserString(t *testing.T) {
 			}
 			assert.Equal(t, tc.result, r)
 		})
+	}
+}
+
+func TestNonRootUserAndDevices(t *testing.T) {
+	testPid := uint32(1234)
+	c := newTestCRIService()
+	testSandboxID := "sandbox-id"
+	testContainerName := "container-name"
+	containerConfig, sandboxConfig, imageConfig, _ := getCreateContainerTestData()
+
+	hostDevicesRaw, err := oci.HostDevices()
+	assert.NoError(t, err)
+
+	testDevice := hostDevicesRaw[0]
+
+	for desc, test := range map[string]struct {
+		uid, gid                           *runtime.Int64Value
+		deviceOwnershipFromSecurityContext bool
+		expectedDeviceUID                  uint32
+		expectedDeviceGID                  uint32
+	}{
+		"expect non-root container's Devices Uid/Gid to be the same as the device Uid/Gid on the host when deviceOwnershipFromSecurityContext is disabled": {
+			uid:               &runtime.Int64Value{Value: 1},
+			gid:               &runtime.Int64Value{Value: 10},
+			expectedDeviceUID: *testDevice.UID,
+			expectedDeviceGID: *testDevice.GID,
+		},
+		"expect root container's Devices Uid/Gid to be the same as the device Uid/Gid on the host when deviceOwnershipFromSecurityContext is disabled": {
+			uid:               &runtime.Int64Value{Value: 0},
+			gid:               &runtime.Int64Value{Value: 0},
+			expectedDeviceUID: *testDevice.UID,
+			expectedDeviceGID: *testDevice.GID,
+		},
+		"expect non-root container's Devices Uid/Gid to be the same as RunAsUser/RunAsGroup when deviceOwnershipFromSecurityContext is enabled": {
+			uid:                                &runtime.Int64Value{Value: 1},
+			gid:                                &runtime.Int64Value{Value: 10},
+			deviceOwnershipFromSecurityContext: true,
+			expectedDeviceUID:                  1,
+			expectedDeviceGID:                  10,
+		},
+		"expect root container's Devices Uid/Gid to be the same as the device Uid/Gid on the host when deviceOwnershipFromSecurityContext is enabled": {
+			uid:                                &runtime.Int64Value{Value: 0},
+			gid:                                &runtime.Int64Value{Value: 0},
+			deviceOwnershipFromSecurityContext: true,
+			expectedDeviceUID:                  *testDevice.UID,
+			expectedDeviceGID:                  *testDevice.GID,
+		},
+	} {
+		t.Logf("TestCase %q", desc)
+
+		c.config.DeviceOwnershipFromSecurityContext = test.deviceOwnershipFromSecurityContext
+		containerConfig.Linux.SecurityContext.RunAsUser = test.uid
+		containerConfig.Linux.SecurityContext.RunAsGroup = test.gid
+		containerConfig.Devices = []*runtime.Device{
+			{
+				ContainerPath: testDevice.Path,
+				HostPath:      testDevice.Path,
+				Permissions:   "r",
+			},
+		}
+
+		spec, err := c.containerSpec(t.Name(), testSandboxID, testPid, "", testContainerName, testImageName, containerConfig, sandboxConfig, imageConfig, nil, config.Runtime{})
+		assert.NoError(t, err)
+
+		assert.Equal(t, test.expectedDeviceUID, *spec.Linux.Devices[0].UID)
+		assert.Equal(t, test.expectedDeviceGID, *spec.Linux.Devices[0].GID)
 	}
 }
 

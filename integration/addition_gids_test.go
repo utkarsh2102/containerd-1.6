@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -19,7 +20,6 @@
 package integration
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,34 +27,24 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestAdditionalGids(t *testing.T) {
-	testPodLogDir, err := ioutil.TempDir("/tmp", "additional-gids")
+	testPodLogDir, err := os.MkdirTemp("/tmp", "additional-gids")
 	require.NoError(t, err)
 	defer os.RemoveAll(testPodLogDir)
 
 	t.Log("Create a sandbox with log directory")
-	sbConfig := PodSandboxConfig("sandbox", "additional-gids",
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "additional-gids",
 		WithPodLogDirectory(testPodLogDir))
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
 
 	var (
 		testImage     = GetImage(BusyBox)
 		containerName = "test-container"
 	)
-	t.Logf("Pull test image %q", testImage)
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-	}()
+
+	EnsureImageExists(t, testImage)
 
 	t.Log("Create a container to print id")
 	cnConfig := ContainerConfig(
@@ -83,7 +73,7 @@ func TestAdditionalGids(t *testing.T) {
 	}, time.Second, 30*time.Second))
 
 	t.Log("Search additional groups in container log")
-	content, err := ioutil.ReadFile(filepath.Join(testPodLogDir, containerName))
+	content, err := os.ReadFile(filepath.Join(testPodLogDir, containerName))
 	assert.NoError(t, err)
 	assert.Contains(t, string(content), "groups=1(daemon),10(wheel),1234")
 }

@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -20,9 +18,7 @@ package mount
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,6 +27,7 @@ import (
 	// so we use continuity/testutil instead.
 	"github.com/containerd/continuity/testutil"
 	"github.com/containerd/continuity/testutil/loopback"
+	exec "golang.org/x/sys/execabs"
 	"gotest.tools/v3/assert"
 )
 
@@ -44,7 +41,7 @@ func checkLookup(t *testing.T, fsType, mntPoint, dir string) {
 
 func testLookup(t *testing.T, fsType string) {
 	testutil.RequiresRoot(t)
-	mnt, err := ioutil.TempDir("", "containerd-mountinfo-test-lookup")
+	mnt, err := os.MkdirTemp("", "containerd-mountinfo-test-lookup")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +68,7 @@ func testLookup(t *testing.T, fsType string) {
 	assert.Check(t, strings.HasPrefix(loop.Device, "/dev/loop"))
 	checkLookup(t, fsType, mnt, mnt)
 
-	newMnt, err := ioutil.TempDir("", "containerd-mountinfo-test-newMnt")
+	newMnt, err := os.MkdirTemp("", "containerd-mountinfo-test-newMnt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,19 +99,19 @@ func TestLookupWithXFS(t *testing.T) {
 }
 
 func TestLookupWithOverlay(t *testing.T) {
-	lower, err := ioutil.TempDir("", "containerd-mountinfo-test-lower")
+	lower, err := os.MkdirTemp("", "containerd-mountinfo-test-lower")
 	assert.NilError(t, err)
 	defer os.RemoveAll(lower)
 
-	upper, err := ioutil.TempDir("", "containerd-mountinfo-test-upper")
+	upper, err := os.MkdirTemp("", "containerd-mountinfo-test-upper")
 	assert.NilError(t, err)
 	defer os.RemoveAll(upper)
 
-	work, err := ioutil.TempDir("", "containerd-mountinfo-test-work")
+	work, err := os.MkdirTemp("", "containerd-mountinfo-test-work")
 	assert.NilError(t, err)
 	defer os.RemoveAll(work)
 
-	overlay, err := ioutil.TempDir("", "containerd-mountinfo-test-overlay")
+	overlay, err := os.MkdirTemp("", "containerd-mountinfo-test-overlay")
 	assert.NilError(t, err)
 	defer os.RemoveAll(overlay)
 

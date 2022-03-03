@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -19,7 +20,6 @@
 package devmapper
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -36,7 +36,7 @@ func TestLoadConfig(t *testing.T) {
 		BaseImageSize: "128Mb",
 	}
 
-	file, err := ioutil.TempFile("", "devmapper-config-")
+	file, err := os.CreateTemp("", "devmapper-config-")
 	assert.NilError(t, err)
 
 	encoder := toml.NewEncoder(file)
@@ -84,18 +84,20 @@ func TestFieldValidation(t *testing.T) {
 	assert.Assert(t, err != nil)
 
 	multErr := (err).(*multierror.Error)
-	assert.Assert(t, is.Len(multErr.Errors, 3))
+	assert.Assert(t, is.Len(multErr.Errors, 4))
 
 	assert.Assert(t, multErr.Errors[0] != nil, "pool_name is empty")
 	assert.Assert(t, multErr.Errors[1] != nil, "root_path is empty")
 	assert.Assert(t, multErr.Errors[2] != nil, "base_image_size is empty")
+	assert.Assert(t, multErr.Errors[3] != nil, "filesystem type cannot be empty")
 }
 
 func TestExistingPoolFieldValidation(t *testing.T) {
 	config := &Config{
-		PoolName:      "test",
-		RootPath:      "test",
-		BaseImageSize: "10mb",
+		PoolName:       "test",
+		RootPath:       "test",
+		BaseImageSize:  "10mb",
+		FileSystemType: "ext4",
 	}
 
 	err := config.Validate()

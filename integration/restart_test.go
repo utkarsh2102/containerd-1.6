@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,15 +17,18 @@
 package integration
 
 import (
+	goruntime "runtime"
 	"sort"
+	"syscall"
 	"testing"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // Restart test must run sequentially.
@@ -74,16 +75,22 @@ func TestContainerdRestart(t *testing.T) {
 					state: runtime.ContainerState_CONTAINER_CREATED,
 				},
 				{
-					name:  "running-container",
-					state: runtime.ContainerState_CONTAINER_RUNNING,
-				},
-				{
 					name:  "exited-container",
 					state: runtime.ContainerState_CONTAINER_EXITED,
 				},
 			},
 		},
 	}
+	// NOTE(claudiub): The test will set the container's Linux.SecurityContext.NamespaceOptions.Pid = NamespaceMode_CONTAINER,
+	// and the expectation is that the container will keep running even if the sandbox container dies.
+	// We do not have that option on Windows.
+	if goruntime.GOOS != "windows" {
+		sandboxes[1].containers = append(sandboxes[1].containers, container{
+			name:  "running-container",
+			state: runtime.ContainerState_CONTAINER_RUNNING,
+		})
+	}
+
 	t.Logf("Make sure no sandbox is running before test")
 	existingSandboxes, err := runtimeService.ListPodSandbox(&runtime.PodSandboxFilter{})
 	require.NoError(t, err)
@@ -100,6 +107,9 @@ func TestContainerdRestart(t *testing.T) {
 			runtimeService.StopPodSandbox(sid)
 			runtimeService.RemovePodSandbox(sid)
 		}()
+
+		EnsureImageExists(t, pauseImage)
+
 		s.id = sid
 		for j := range s.containers {
 			c := &s.containers[j]
@@ -126,20 +136,42 @@ func TestContainerdRestart(t *testing.T) {
 			require.NoError(t, err)
 			task, err := cntr.Task(ctx, nil)
 			require.NoError(t, err)
-			_, err = task.Delete(ctx, containerd.WithProcessKill)
-			if err != nil {
-				require.True(t, errdefs.IsNotFound(err))
+
+			waitCh, err := task.Wait(ctx)
+			require.NoError(t, err)
+
+			err = task.Kill(ctx, syscall.SIGKILL, containerd.WithKillAll)
+			if goruntime.GOOS != "windows" {
+				// NOTE: CRI-plugin setups watcher for each container and
+				// cleanups container when the watcher returns exit event.
+				// We just need to kill that sandbox and wait for exit
+				// event from waitCh. If the sandbox container exits,
+				// the state of sandbox must be NOT_READY.
+				require.NoError(t, err)
+			} else {
+				// NOTE(gabriel-samfira): On Windows, the "notready-sandbox" array
+				// only has a container in the ContainerState_CONTAINER_CREATED
+				// state and a container in the ContainerState_CONTAINER_EXITED state.
+				// Sending a Kill() to a task that has already exited, or to a task that
+				// was never started (which is the case here), will always return an
+				// ErrorNotFound (at least on Windows). Given that in this sanbox, there
+				// will never be a running task, after we recover from a containerd restart
+				// we can expect an ErrorNotFound here every time.
+				// The waitCh channel should already be closed at this point.
+				assert.True(t, errdefs.IsNotFound(err), err)
+			}
+
+			select {
+			case <-waitCh:
+			case <-time.After(30 * time.Second):
+				t.Fatalf("expected to receive exit event in time, but timeout")
 			}
 		}
 	}
 
 	t.Logf("Pull test images")
-	for _, image := range []string{GetImage(BusyBox), GetImage(Alpine)} {
-		img, err := imageService.PullImage(&runtime.ImageSpec{Image: image}, nil, nil)
-		require.NoError(t, err)
-		defer func() {
-			assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-		}()
+	for _, image := range []string{GetImage(BusyBox), GetImage(Pause)} {
+		EnsureImageExists(t, image)
 	}
 	imagesBeforeRestart, err := imageService.ListImages(nil)
 	assert.NoError(t, err)
@@ -153,10 +185,11 @@ func TestContainerdRestart(t *testing.T) {
 	assert.Len(t, loadedSandboxes, len(sandboxes))
 	loadedContainers, err := runtimeService.ListContainers(&runtime.ContainerFilter{})
 	require.NoError(t, err)
-	assert.Len(t, loadedContainers, len(sandboxes)*3)
+	assert.Len(t, loadedContainers, len(sandboxes[0].containers)+len(sandboxes[1].containers))
 	for _, s := range sandboxes {
 		for _, loaded := range loadedSandboxes {
 			if s.id == loaded.Id {
+				t.Logf("Checking sandbox state for '%s'", s.name)
 				assert.Equal(t, s.state, loaded.State)
 				break
 			}
@@ -164,6 +197,7 @@ func TestContainerdRestart(t *testing.T) {
 		for _, c := range s.containers {
 			for _, loaded := range loadedContainers {
 				if c.id == loaded.Id {
+					t.Logf("Checking container state for '%s' in sandbox '%s'", c.name, s.name)
 					assert.Equal(t, c.state, loaded.State)
 					break
 				}

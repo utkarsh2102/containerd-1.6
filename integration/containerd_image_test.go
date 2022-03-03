@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,18 +17,18 @@
 package integration
 
 import (
+	"errors"
+	"fmt"
 	"testing"
 	"time"
-
-	"golang.org/x/net/context"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	"golang.org/x/net/context"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // Test to test the CRI plugin should see image pulled into containerd directly.
@@ -46,7 +44,7 @@ func TestContainerdImage(t *testing.T) {
 	}
 
 	t.Logf("pull the image into containerd")
-	_, err = containerdClient.Pull(ctx, testImage, containerd.WithPullUnpack)
+	_, err = containerdClient.Pull(ctx, testImage, containerd.WithPullUnpack, containerd.WithPullLabel("foo", "bar"))
 	assert.NoError(t, err)
 	defer func() {
 		// Make sure the image is cleaned up in any case.
@@ -79,10 +77,10 @@ func TestContainerdImage(t *testing.T) {
 		}
 		if len(img.RepoTags) != 1 {
 			// RepoTags must have been populated correctly.
-			return false, errors.Errorf("unexpected repotags: %+v", img.RepoTags)
+			return false, fmt.Errorf("unexpected repotags: %+v", img.RepoTags)
 		}
 		if img.RepoTags[0] != testImage {
-			return false, errors.Errorf("unexpected repotag %q", img.RepoTags[0])
+			return false, fmt.Errorf("unexpected repotag %q", img.RepoTags[0])
 		}
 		return true, nil
 	}
@@ -123,19 +121,18 @@ func TestContainerdImage(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, imgByID.Labels()["io.cri-containerd.image"], "managed")
 
+	t.Logf("the image should be labeled")
+	img, err := containerdClient.GetImage(ctx, testImage)
+	assert.NoError(t, err)
+	assert.Equal(t, img.Labels()["foo"], "bar")
+
 	t.Logf("should be able to start container with the image")
-	sbConfig := PodSandboxConfig("sandbox", "containerd-image")
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "containerd-image")
 
 	cnConfig := ContainerConfig(
 		"test-container",
 		id,
-		WithCommand("top"),
+		WithCommand("sleep", "300"),
 	)
 	cn, err := runtimeService.CreateContainer(sb, cnConfig, sbConfig)
 	require.NoError(t, err)
@@ -185,13 +182,8 @@ func TestContainerdImageInOtherNamespaces(t *testing.T) {
 	}
 	require.NoError(t, Consistently(checkImage, 100*time.Millisecond, time.Second))
 
-	sbConfig := PodSandboxConfig("sandbox", "test")
-	t.Logf("pull the image into cri plugin")
-	id, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: id}))
-	}()
+	PodSandboxConfigWithCleanup(t, "sandbox", "test")
+	EnsureImageExists(t, testImage)
 
 	t.Logf("cri plugin should see the image now")
 	img, err := imageService.ImageStatus(&runtime.ImageSpec{Image: testImage})

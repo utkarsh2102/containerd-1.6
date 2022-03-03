@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -19,7 +20,6 @@
 package integration
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -30,7 +30,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sys/unix"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestSandboxRemoveWithoutIPLeakage(t *testing.T) {
@@ -39,11 +39,11 @@ func TestSandboxRemoveWithoutIPLeakage(t *testing.T) {
 	t.Logf("Make sure host-local ipam is in use")
 	config, err := CRIConfig()
 	require.NoError(t, err)
-	fs, err := ioutil.ReadDir(config.NetworkPluginConfDir)
+	fs, err := os.ReadDir(config.NetworkPluginConfDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, fs)
 	f := filepath.Join(config.NetworkPluginConfDir, fs[0].Name())
-	cniConfig, err := ioutil.ReadFile(f)
+	cniConfig, err := os.ReadFile(f)
 	require.NoError(t, err)
 	if !strings.Contains(string(cniConfig), "host-local") {
 		t.Skip("host-local ipam is not in use")

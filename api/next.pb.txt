@@ -2389,6 +2389,7 @@ file {
     java_outer_classname: "StatusProto"
     java_multiple_files: true
     go_package: "rpc"
+    cc_enable_arenas: true
     objc_class_prefix: "RPC"
   }
   syntax: "proto3"
@@ -3819,6 +3820,13 @@ file {
       type: TYPE_MESSAGE
       type_name: ".google.protobuf.Any"
       json_name: "options"
+    }
+    field {
+      name: "runtime_path"
+      number: 10
+      label: LABEL_OPTIONAL
+      type: TYPE_STRING
+      json_name: "runtimePath"
     }
   }
   message_type {

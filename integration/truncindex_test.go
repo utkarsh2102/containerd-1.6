@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,11 +17,12 @@
 package integration
 
 import (
+	goruntime "runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtimeapi "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func genTruncIndex(normalName string) string {
@@ -35,12 +34,9 @@ func TestTruncIndex(t *testing.T) {
 
 	t.Logf("Pull an image")
 	var appImage = GetImage(BusyBox)
-	imgID, err := imageService.PullImage(&runtimeapi.ImageSpec{Image: appImage}, nil, sbConfig)
-	require.NoError(t, err)
+
+	imgID := EnsureImageExists(t, appImage)
 	imgTruncID := genTruncIndex(imgID)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtimeapi.ImageSpec{Image: imgTruncID}))
-	}()
 
 	t.Logf("Get image status by truncindex, truncID: %s", imgTruncID)
 	res, err := imageService.ImageStatus(&runtimeapi.ImageSpec{Image: imgTruncID})
@@ -85,7 +81,7 @@ func TestTruncIndex(t *testing.T) {
 	cnConfig := ContainerConfig(
 		"containerTruncIndex",
 		appImage,
-		WithCommand("top"),
+		WithCommand("sleep", "300"),
 	)
 	cn, err := runtimeService.CreateContainer(sbTruncIndex, cnConfig, sbConfig)
 	require.NoError(t, err)
@@ -116,10 +112,17 @@ func TestTruncIndex(t *testing.T) {
 	assert.Equal(t, cn, cStats.Attributes.Id)
 
 	t.Logf("Update container memory limit after started")
-	err = runtimeService.UpdateContainerResources(cnTruncIndex, &runtimeapi.LinuxContainerResources{
-		MemoryLimitInBytes: 50 * 1024 * 1024,
-	})
-	assert.NoError(t, err)
+	if goruntime.GOOS != "windows" {
+		err = runtimeService.UpdateContainerResources(cnTruncIndex, &runtimeapi.LinuxContainerResources{
+			MemoryLimitInBytes: 50 * 1024 * 1024,
+		}, nil)
+		assert.NoError(t, err)
+	} else {
+		err = runtimeService.UpdateContainerResources(cnTruncIndex, nil, &runtimeapi.WindowsContainerResources{
+			MemoryLimitInBytes: 50 * 1024 * 1024,
+		})
+		assert.NoError(t, err)
+	}
 
 	t.Logf("Execute cmd in container")
 	execReq := &runtimeapi.ExecRequest{

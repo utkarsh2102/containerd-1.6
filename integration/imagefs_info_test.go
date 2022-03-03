@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,33 +17,22 @@
 package integration
 
 import (
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestImageFSInfo(t *testing.T) {
-	config := PodSandboxConfig("running-pod", "imagefs")
+	t.Logf("Create a sandbox to make sure there is an active snapshot")
+	PodSandboxConfigWithCleanup(t, "running-pod", "imagefs")
 
 	t.Logf("Pull an image to make sure image fs is not empty")
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: GetImage(BusyBox)}, nil, config)
-	require.NoError(t, err)
-	defer func() {
-		err := imageService.RemoveImage(&runtime.ImageSpec{Image: img})
-		assert.NoError(t, err)
-	}()
-	t.Logf("Create a sandbox to make sure there is an active snapshot")
-	sb, err := runtimeService.RunPodSandbox(config, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
+	EnsureImageExists(t, GetImage(BusyBox))
 
 	// It takes time to populate imagefs stats. Use eventually
 	// to check for a period of time.
@@ -60,12 +47,11 @@ func TestImageFSInfo(t *testing.T) {
 			return false, nil
 		}
 		if len(stats) >= 2 {
-			return false, errors.Errorf("unexpected stats length: %d", len(stats))
+			return false, fmt.Errorf("unexpected stats length: %d", len(stats))
 		}
 		info = stats[0]
 		if info.GetTimestamp() != 0 &&
 			info.GetUsedBytes().GetValue() != 0 &&
-			info.GetInodesUsed().GetValue() != 0 &&
 			info.GetFsId().GetMountpoint() != "" {
 			return true, nil
 		}
@@ -73,6 +59,6 @@ func TestImageFSInfo(t *testing.T) {
 	}, time.Second, 30*time.Second))
 
 	t.Logf("Image filesystem mountpath should exist")
-	_, err = os.Stat(info.GetFsId().GetMountpoint())
+	_, err := os.Stat(info.GetFsId().GetMountpoint())
 	assert.NoError(t, err)
 }

@@ -1,5 +1,3 @@
-// +build windows
-
 /*
    Copyright The containerd Authors.
 
@@ -24,7 +22,7 @@ import (
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
 	runtimespec "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/stretchr/testify/assert"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	"github.com/containerd/containerd/pkg/cri/annotations"
 	"github.com/containerd/containerd/pkg/cri/opts"
@@ -42,12 +40,20 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 		LogDirectory: "test-log-directory",
 		Labels:       map[string]string{"a": "b"},
 		Annotations:  map[string]string{"c": "d"},
+		Windows: &runtime.WindowsPodSandboxConfig{
+			SecurityContext: &runtime.WindowsSandboxSecurityContext{
+				RunAsUsername:  "test-user",
+				CredentialSpec: "{\"test\": \"spec\"}",
+				HostProcess:    false,
+			},
+		},
 	}
 	imageConfig := &imagespec.ImageConfig{
 		Env:        []string{"a=b", "c=d"},
 		Entrypoint: []string{"/pause"},
 		Cmd:        []string{"forever"},
 		WorkingDir: "/workspace",
+		User:       "test-image-user",
 	}
 	specCheck := func(t *testing.T, id string, spec *runtimespec.Spec) {
 		assert.Equal(t, "test-hostname", spec.Hostname)
@@ -56,6 +62,13 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 		assert.Equal(t, []string{"/pause", "forever"}, spec.Process.Args)
 		assert.Equal(t, "/workspace", spec.Process.Cwd)
 		assert.EqualValues(t, *spec.Windows.Resources.CPU.Shares, opts.DefaultSandboxCPUshares)
+
+		// Also checks if override of the image configs user is behaving.
+		t.Logf("Check username")
+		assert.Contains(t, spec.Process.User.Username, "test-user")
+
+		t.Logf("Check credential spec")
+		assert.Contains(t, spec.Windows.CredentialSpec, "{\"test\": \"spec\"}")
 
 		t.Logf("Check PodSandbox annotations")
 		assert.Contains(t, spec.Annotations, annotations.SandboxID)
@@ -72,6 +85,9 @@ func getRunPodSandboxTestData() (*runtime.PodSandboxConfig, *imagespec.ImageConf
 
 		assert.Contains(t, spec.Annotations, annotations.SandboxLogDir)
 		assert.EqualValues(t, spec.Annotations[annotations.SandboxLogDir], "test-log-directory")
+
+		assert.Contains(t, spec.Annotations, annotations.WindowsHostProcess)
+		assert.EqualValues(t, spec.Annotations[annotations.WindowsHostProcess], "false")
 	}
 	return config, imageConfig, specCheck
 }

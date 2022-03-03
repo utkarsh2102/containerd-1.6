@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -20,13 +21,12 @@ package devmapper
 
 import (
 	"context"
-	"io/ioutil"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
-	"github.com/pkg/errors"
 	"go.etcd.io/bbolt"
 	"gotest.tools/v3/assert"
 	is "gotest.tools/v3/assert/cmp"
@@ -232,7 +232,7 @@ func TestPoolMetadata_GetDeviceNames(t *testing.T) {
 }
 
 func createStore(t *testing.T) (tempDir string, store *PoolMetadata) {
-	tempDir, err := ioutil.TempDir("", "pool-metadata-")
+	tempDir, err := os.MkdirTemp("", "pool-metadata-")
 	assert.NilError(t, err, "couldn't create temp directory for metadata tests")
 
 	path := filepath.Join(tempDir, "test.db")

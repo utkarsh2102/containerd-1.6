@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -25,7 +26,6 @@ import (
 	"github.com/docker/go-units"
 	"github.com/hashicorp/go-multierror"
 	"github.com/pelletier/go-toml"
-	"github.com/pkg/errors"
 )
 
 // Config represents device mapper configuration loaded from file.
@@ -43,6 +43,15 @@ type Config struct {
 
 	// Flag to async remove device using Cleanup() callback in snapshots GC
 	AsyncRemove bool `toml:"async_remove"`
+
+	// Whether to discard blocks when removing a thin device.
+	DiscardBlocks bool `toml:"discard_blocks"`
+
+	// Defines file system to use for snapshout device mount. Defaults to "ext4"
+	FileSystemType fsType `toml:"fs_type"`
+
+	// Defines optional file system options passed through config file
+	FsOptions string `toml:"fs_options"`
 }
 
 // LoadConfig reads devmapper configuration file from disk in TOML format
@@ -58,11 +67,11 @@ func LoadConfig(path string) (*Config, error) {
 	config := Config{}
 	file, err := toml.LoadFile(path)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to open devmapepr TOML: %s", path)
+		return nil, fmt.Errorf("failed to open devmapepr TOML: %s: %w", path, err)
 	}
 
 	if err := file.Unmarshal(&config); err != nil {
-		return nil, errors.Wrap(err, "failed to unmarshal devmapper TOML")
+		return nil, fmt.Errorf("failed to unmarshal devmapper TOML: %w", err)
 	}
 
 	if err := config.parse(); err != nil {
@@ -79,7 +88,11 @@ func LoadConfig(path string) (*Config, error) {
 func (c *Config) parse() error {
 	baseImageSize, err := units.RAMInBytes(c.BaseImageSize)
 	if err != nil {
-		return errors.Wrapf(err, "failed to parse base image size: '%s'", c.BaseImageSize)
+		return fmt.Errorf("failed to parse base image size: '%s': %w", c.BaseImageSize, err)
+	}
+
+	if c.FileSystemType == "" {
+		c.FileSystemType = fsTypeExt4
 	}
 
 	c.BaseImageSizeBytes = uint64(baseImageSize)
@@ -100,6 +113,16 @@ func (c *Config) Validate() error {
 
 	if c.BaseImageSize == "" {
 		result = multierror.Append(result, fmt.Errorf("base_image_size is required"))
+	}
+
+	if c.FileSystemType != "" {
+		switch c.FileSystemType {
+		case fsTypeExt4, fsTypeXFS:
+		default:
+			result = multierror.Append(result, fmt.Errorf("unsupported Filesystem Type: %q", c.FileSystemType))
+		}
+	} else {
+		result = multierror.Append(result, fmt.Errorf("filesystem type cannot be empty"))
 	}
 
 	return result.ErrorOrNil()

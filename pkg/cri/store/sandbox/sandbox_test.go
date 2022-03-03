@@ -18,12 +18,14 @@ package sandbox
 
 import (
 	"testing"
+	"time"
 
+	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/pkg/cri/store/label"
-	assertlib "github.com/stretchr/testify/assert"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	"github.com/containerd/containerd/pkg/cri/store/stats"
 
-	"github.com/containerd/containerd/pkg/cri/store"
+	assertlib "github.com/stretchr/testify/assert"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestSandboxStore(t *testing.T) {
@@ -109,6 +111,24 @@ func TestSandboxStore(t *testing.T) {
 		},
 		Status{State: StateUnknown},
 	)
+	stats := map[string]*stats.ContainerStats{
+		"1": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 1,
+		},
+		"2abcd": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 2,
+		},
+		"4a333": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 3,
+		},
+		"4abcd": {
+			Timestamp:            time.Now(),
+			UsageCoreNanoSeconds: 4,
+		},
+	}
 	assert := assertlib.New(t)
 	s := NewStore(label.NewStore())
 
@@ -136,11 +156,24 @@ func TestSandboxStore(t *testing.T) {
 	sbs := s.List()
 	assert.Len(sbs, sbNum)
 
+	t.Logf("should be able to update stats on container")
+	for id := range sandboxes {
+		err := s.UpdateContainerStats(id, stats[id])
+		assert.NoError(err)
+	}
+
+	// Validate stats were updated
+	sbs = s.List()
+	assert.Len(sbs, sbNum)
+	for _, sb := range sbs {
+		assert.Equal(stats[sb.ID], sb.Stats)
+	}
+
 	for testID, v := range sandboxes {
 		truncID := genTruncIndex(testID)
 
 		t.Logf("add should return already exists error for duplicated sandbox")
-		assert.Equal(store.ErrAlreadyExist, s.Add(v))
+		assert.Equal(errdefs.ErrAlreadyExists, s.Add(v))
 
 		t.Logf("should be able to delete sandbox")
 		s.Delete(truncID)
@@ -151,6 +184,6 @@ func TestSandboxStore(t *testing.T) {
 		t.Logf("get should return not exist error after deletion")
 		sb, err := s.Get(truncID)
 		assert.Equal(Sandbox{}, sb)
-		assert.Equal(store.ErrNotExist, err)
+		assert.Equal(errdefs.ErrNotFound, err)
 	}
 }

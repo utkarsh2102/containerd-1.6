@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,7 +17,6 @@
 package mount
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -31,7 +28,7 @@ var randomData = []byte("randomdata")
 func createTempFile(t *testing.T) string {
 	t.Helper()
 
-	f, err := ioutil.TempFile("", "losetup")
+	f, err := os.CreateTemp("", "losetup")
 	if err != nil {
 		t.Fatal(err)
 	}

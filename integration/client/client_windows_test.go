@@ -30,11 +30,12 @@ const (
 )
 
 var (
-	defaultRoot  = filepath.Join(os.Getenv("programfiles"), "containerd", "root-test")
-	defaultState = filepath.Join(os.Getenv("programfiles"), "containerd", "state-test")
-	testImage    string
-	shortCommand = withTrue()
-	longCommand  = withProcessArgs("ping", "-t", "localhost")
+	defaultRoot           = filepath.Join(os.Getenv("programfiles"), "containerd", "root-test")
+	defaultState          = filepath.Join(os.Getenv("programfiles"), "containerd", "state-test")
+	testImage             string
+	testMultiLayeredImage = "ghcr.io/containerd/volume-copy-up:2.1"
+	shortCommand          = withTrue()
+	longCommand           = withProcessArgs("ping", "-t", "localhost")
 )
 
 func init() {
@@ -56,7 +57,17 @@ func init() {
 		testImage = "mcr.microsoft.com/windows/nanoserver:2004"
 	case osversion.V20H2:
 		testImage = "mcr.microsoft.com/windows/nanoserver:20H2"
+	case osversion.V21H2Server:
+		testImage = "mcr.microsoft.com/windows/nanoserver:ltsc2022"
 	default:
+		// Due to some efforts in improving down-level compatibility for Windows containers (see
+		// https://techcommunity.microsoft.com/t5/containers/windows-server-2022-and-beyond-for-containers/ba-p/2712487)
+		// the ltsc2022 image should continue to work on builds ws2022 and onwards (Windows 11 for example). With this in mind,
+		// if there's no mapping for the host build just use the Windows Server 2022 image.
+		if b > osversion.V21H2Server {
+			testImage = "mcr.microsoft.com/windows/nanoserver:ltsc2022"
+			return
+		}
 		fmt.Println("No test image defined for Windows build version:", b)
 		panic("No windows test image found for this Windows build")
 	}

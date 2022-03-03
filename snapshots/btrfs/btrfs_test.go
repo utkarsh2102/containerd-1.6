@@ -1,3 +1,4 @@
+//go:build linux && !no_btrfs && cgo
 // +build linux,!no_btrfs,cgo
 
 /*
@@ -19,10 +20,11 @@
 package btrfs
 
 import (
+	"bytes"
 	"context"
-	"io/ioutil"
+	"errors"
+	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,7 +36,7 @@ import (
 	"github.com/containerd/containerd/snapshots"
 	"github.com/containerd/containerd/snapshots/testsuite"
 	"github.com/containerd/continuity/testutil/loopback"
-	"github.com/pkg/errors"
+	exec "golang.org/x/sys/execabs"
 	"golang.org/x/sys/unix"
 )
 
@@ -44,7 +46,10 @@ func boltSnapshotter(t *testing.T) func(context.Context, string) (snapshots.Snap
 		t.Skipf("could not find mkfs.btrfs: %v", err)
 	}
 
-	// TODO: Check for btrfs in /proc/module and skip if not loaded
+	procModules, err := os.ReadFile("/proc/modules")
+	if err == nil && !bytes.Contains(procModules, []byte("btrfs")) {
+		t.Skip("check for btrfs kernel module failed, skipping test")
+	}
 
 	return func(ctx context.Context, root string) (snapshots.Snapshotter, func() error, error) {
 
@@ -62,7 +67,7 @@ func boltSnapshotter(t *testing.T) func(context.Context, string) (snapshots.Snap
 
 		if out, err := exec.Command(mkbtrfs, loop.Device).CombinedOutput(); err != nil {
 			loop.Close()
-			return nil, nil, errors.Wrapf(err, "failed to make btrfs filesystem (out: %q)", out)
+			return nil, nil, fmt.Errorf("failed to make btrfs filesystem (out: %q): %w", out, err)
 		}
 		// sync after a mkfs on the loopback before trying to mount the device
 		unix.Sync()
@@ -71,7 +76,7 @@ func boltSnapshotter(t *testing.T) func(context.Context, string) (snapshots.Snap
 		for i := 0; i < 5; i++ {
 			if out, err := exec.Command("mount", loop.Device, root).CombinedOutput(); err != nil {
 				loop.Close()
-				return nil, nil, errors.Wrapf(err, "failed to mount device %s (out: %q)", loop.Device, out)
+				return nil, nil, fmt.Errorf("failed to mount device %s (out: %q): %w", loop.Device, out, err)
 			}
 
 			if i > 0 {
@@ -91,7 +96,7 @@ func boltSnapshotter(t *testing.T) func(context.Context, string) (snapshots.Snap
 			unix.Unmount(root, 0)
 		}
 		if snapshotter == nil {
-			return nil, nil, errors.Wrap(err, "failed to successfully create snapshotter after 5 attempts")
+			return nil, nil, fmt.Errorf("failed to successfully create snapshotter after 5 attempts: %w", err)
 		}
 
 		return snapshotter, func() error {
@@ -100,7 +105,7 @@ func boltSnapshotter(t *testing.T) func(context.Context, string) (snapshots.Snap
 			}
 			err := mount.UnmountAll(root, unix.MNT_DETACH)
 			if cerr := loop.Close(); cerr != nil {
-				err = errors.Wrap(cerr, "device cleanup failed")
+				err = fmt.Errorf("device cleanup failed: %w", cerr)
 			}
 			return err
 		}, nil
@@ -117,14 +122,14 @@ func TestBtrfsMounts(t *testing.T) {
 	ctx := context.Background()
 
 	// create temporary directory for mount point
-	mountPoint, err := ioutil.TempDir("", "containerd-btrfs-test")
+	mountPoint, err := os.MkdirTemp("", "containerd-btrfs-test")
 	if err != nil {
 		t.Fatal("could not create mount point for btrfs test", err)
 	}
 	defer os.RemoveAll(mountPoint)
 	t.Log("temporary mount point created", mountPoint)
 
-	root, err := ioutil.TempDir(mountPoint, "TestBtrfsPrepare-")
+	root, err := os.MkdirTemp(mountPoint, "TestBtrfsPrepare-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +168,7 @@ func TestBtrfsMounts(t *testing.T) {
 	defer testutil.Unmount(t, target)
 
 	// write in some data
-	if err := ioutil.WriteFile(filepath.Join(target, "foo"), []byte("content"), 0777); err != nil {
+	if err := os.WriteFile(filepath.Join(target, "foo"), []byte("content"), 0777); err != nil {
 		t.Fatal(err)
 	}
 
@@ -192,8 +197,15 @@ func TestBtrfsMounts(t *testing.T) {
 	}
 	defer testutil.Unmount(t, target)
 
-	// TODO(stevvooe): Verify contents of "foo"
-	if err := ioutil.WriteFile(filepath.Join(target, "bar"), []byte("content"), 0777); err != nil {
+	bs, err := os.ReadFile(filepath.Join(target, "foo"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(bs) != "content" {
+		t.Fatalf("wrong content in foo want: content, got: %s", bs)
+	}
+
+	if err := os.WriteFile(filepath.Join(target, "bar"), []byte("content"), 0777); err != nil {
 		t.Fatal(err)
 	}
 

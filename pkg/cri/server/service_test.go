@@ -18,11 +18,11 @@ package server
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"os"
 	"testing"
 
 	"github.com/containerd/containerd/oci"
+	"github.com/containerd/go-cni"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -66,14 +66,16 @@ func newTestCRIService() *criService {
 		sandboxNameIndex:   registrar.NewRegistrar(),
 		containerStore:     containerstore.NewStore(labels),
 		containerNameIndex: registrar.NewRegistrar(),
-		netPlugin:          servertesting.NewFakeCNIPlugin(),
+		netPlugin: map[string]cni.CNI{
+			defaultNetworkPlugin: servertesting.NewFakeCNIPlugin(),
+		},
 	}
 }
 
 func TestLoadBaseOCISpec(t *testing.T) {
 	spec := oci.Spec{Version: "1.0.2", Hostname: "default"}
 
-	file, err := ioutil.TempFile("", "spec-test-")
+	file, err := os.CreateTemp("", "spec-test-")
 	require.NoError(t, err)
 
 	defer func() {

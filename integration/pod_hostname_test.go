@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -19,15 +17,16 @@
 package integration
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestPodHostname(t *testing.T) {
@@ -37,6 +36,7 @@ func TestPodHostname(t *testing.T) {
 		opts             []PodSandboxOpts
 		expectedHostname string
 		expectErr        bool
+		needsHostNetwork bool
 	}{
 		"regular pod with custom hostname": {
 			opts: []PodSandboxOpts{
@@ -49,17 +49,22 @@ func TestPodHostname(t *testing.T) {
 				WithHostNetwork,
 			},
 			expectedHostname: hostname,
+			needsHostNetwork: true,
 		},
 		"host network pod with custom hostname should fail": {
 			opts: []PodSandboxOpts{
 				WithHostNetwork,
 				WithPodHostname("test-hostname"),
 			},
-			expectErr: true,
+			expectErr:        true,
+			needsHostNetwork: true,
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			testPodLogDir, err := ioutil.TempDir("/tmp", "hostname")
+			if test.needsHostNetwork && goruntime.GOOS == "windows" {
+				t.Skip("Skipped on Windows.")
+			}
+			testPodLogDir, err := os.MkdirTemp("/tmp", "hostname")
 			require.NoError(t, err)
 			defer os.RemoveAll(testPodLogDir)
 
@@ -86,19 +91,15 @@ func TestPodHostname(t *testing.T) {
 				testImage     = GetImage(BusyBox)
 				containerName = "test-container"
 			)
-			t.Logf("Pull test image %q", testImage)
-			img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-			require.NoError(t, err)
-			defer func() {
-				assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-			}()
+
+			EnsureImageExists(t, testImage)
 
 			t.Log("Create a container to print env")
 			cnConfig := ContainerConfig(
 				containerName,
 				testImage,
 				WithCommand("sh", "-c",
-					"echo -n /etc/hostname= && cat /etc/hostname && env"),
+					"echo -n /etc/hostname= && hostname && env"),
 				WithLogPath(containerName),
 			)
 			cn, err := runtimeService.CreateContainer(sb, cnConfig, sbConfig)
@@ -119,11 +120,15 @@ func TestPodHostname(t *testing.T) {
 				return false, nil
 			}, time.Second, 30*time.Second))
 
-			content, err := ioutil.ReadFile(filepath.Join(testPodLogDir, containerName))
+			content, err := os.ReadFile(filepath.Join(testPodLogDir, containerName))
 			assert.NoError(t, err)
 
 			t.Log("Search hostname env in container log")
-			assert.Contains(t, string(content), "HOSTNAME="+test.expectedHostname)
+			if goruntime.GOOS == "windows" {
+				assert.Contains(t, string(content), "COMPUTERNAME="+strings.ToUpper(test.expectedHostname))
+			} else {
+				assert.Contains(t, string(content), "HOSTNAME="+test.expectedHostname)
+			}
 
 			t.Log("Search /etc/hostname content in container log")
 			assert.Contains(t, string(content), "/etc/hostname="+test.expectedHostname)

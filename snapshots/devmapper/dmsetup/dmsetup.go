@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -16,17 +17,20 @@
    limitations under the License.
 */
 
+// Copyright 2012-2017 Docker, Inc.
+
 package dmsetup
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 
-	"github.com/pkg/errors"
+	blkdiscard "github.com/containerd/containerd/snapshots/devmapper/blkdiscard"
+	exec "golang.org/x/sys/execabs"
 	"golang.org/x/sys/unix"
 )
 
@@ -36,6 +40,9 @@ const (
 	// SectorSize represents the number of bytes in one sector on devmapper devices
 	SectorSize = 512
 )
+
+// ErrInUse represents an error mutating a device because it is in use elsewhere
+var ErrInUse = errors.New("device is in use")
 
 // DeviceInfo represents device info returned by "dmsetup info".
 // dmsetup(8) provides more information on each of these fields.
@@ -94,7 +101,7 @@ const (
 func makeThinPoolMapping(dataFile, metaFile string, blockSizeSectors uint32) (string, error) {
 	dataDeviceSizeBytes, err := BlockDeviceSize(dataFile)
 	if err != nil {
-		return "", errors.Wrapf(err, "failed to get block device size: %s", dataFile)
+		return "", fmt.Errorf("failed to get block device size: %s: %w", dataFile, err)
 	}
 
 	// Thin-pool mapping target has the following format:
@@ -252,7 +259,7 @@ func Info(deviceName string) ([]*DeviceInfo, error) {
 			&info.EventNumber)
 
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to parse line %q", line)
+			return nil, fmt.Errorf("failed to parse line %q: %w", line, err)
 		}
 
 		// Parse attributes (see "man 8 dmsetup" for details)
@@ -302,17 +309,17 @@ func Status(deviceName string) (*DeviceStatus, error) {
 	const MinParseCount = 4
 	parts := strings.Split(output, " ")
 	if len(parts) < MinParseCount {
-		return nil, errors.Errorf("failed to parse output: %q", output)
+		return nil, fmt.Errorf("failed to parse output: %q", output)
 	}
 
 	status.Offset, err = strconv.ParseInt(parts[0], 10, 64)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse offset: %q", parts[0])
+		return nil, fmt.Errorf("failed to parse offset: %q: %w", parts[0], err)
 	}
 
 	status.Length, err = strconv.ParseInt(parts[1], 10, 64)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to parse length: %q", parts[1])
+		return nil, fmt.Errorf("failed to parse length: %q: %w", parts[1], err)
 	}
 
 	status.Target = parts[2]
@@ -340,9 +347,27 @@ func BlockDeviceSize(path string) (int64, error) {
 
 	size, err := f.Seek(0, io.SeekEnd)
 	if err != nil {
-		return 0, errors.Wrapf(err, "failed to seek on %q", path)
+		return 0, fmt.Errorf("failed to seek on %q: %w", path, err)
 	}
 	return size, nil
+}
+
+// DiscardBlocks discards all blocks for the given thin device
+//  ported from https://github.com/moby/moby/blob/7b9275c0da707b030e62c96b679a976f31f929d3/pkg/devicemapper/devmapper.go#L416
+func DiscardBlocks(deviceName string) error {
+	inUse, err := isInUse(deviceName)
+	if err != nil {
+		return err
+	}
+	if inUse {
+		return ErrInUse
+	}
+	path := GetFullDevicePath(deviceName)
+	_, err = blkdiscard.BlkDiscard(path)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func dmsetup(args ...string) (string, error) {
@@ -354,7 +379,7 @@ func dmsetup(args ...string) (string, error) {
 			return "", errno
 		}
 
-		return "", errors.Wrapf(err, "dmsetup %s\nerror: %s\n", strings.Join(args, " "), output)
+		return "", fmt.Errorf("dmsetup %s\nerror: %s\n: %w", strings.Join(args, " "), output, err)
 	}
 
 	output = strings.TrimSuffix(output, "\n")
@@ -405,4 +430,15 @@ func parseDmsetupError(output string) string {
 
 	str = strings.ToLower(str)
 	return str
+}
+
+func isInUse(deviceName string) (bool, error) {
+	info, err := Info(deviceName)
+	if err != nil {
+		return true, err
+	}
+	if len(info) != 1 {
+		return true, errors.New("could not get device info")
+	}
+	return info[0].OpenCount != 0, nil
 }

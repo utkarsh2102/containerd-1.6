@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -19,18 +20,17 @@
 package overlayutils
 
 import (
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"testing"
 
 	"github.com/containerd/containerd/pkg/testutil"
 	"github.com/containerd/continuity/testutil/loopback"
+	exec "golang.org/x/sys/execabs"
 )
 
 func testOverlaySupported(t testing.TB, expected bool, mkfs ...string) {
 	testutil.RequiresRoot(t)
-	mnt, err := ioutil.TempDir("", "containerd-fs-test-supports-overlay")
+	mnt, err := os.MkdirTemp("", "containerd-fs-test-supports-overlay")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,3 +1,4 @@
+//go:build linux
 // +build linux
 
 /*
@@ -21,9 +22,7 @@ package devmapper
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -33,6 +32,7 @@ import (
 	"github.com/containerd/containerd/snapshots/devmapper/dmsetup"
 	"github.com/docker/go-units"
 	"github.com/sirupsen/logrus"
+	exec "golang.org/x/sys/execabs"
 	"gotest.tools/v3/assert"
 )
 
@@ -61,7 +61,7 @@ func TestPoolDevice(t *testing.T) {
 	logrus.SetLevel(logrus.DebugLevel)
 	ctx := context.Background()
 
-	tempDir, err := ioutil.TempDir("", "pool-device-test-")
+	tempDir, err := os.MkdirTemp("", "pool-device-test-")
 	assert.NilError(t, err, "couldn't get temp directory for testing")
 
 	_, loopDataDevice := createLoopbackDevice(t, tempDir)
@@ -85,6 +85,7 @@ func TestPoolDevice(t *testing.T) {
 		RootPath:           tempDir,
 		BaseImageSize:      "16mb",
 		BaseImageSizeBytes: 16 * 1024 * 1024,
+		DiscardBlocks:      true,
 	}
 
 	pool, err := NewPoolDevice(ctx, config)
@@ -110,7 +111,7 @@ func TestPoolDevice(t *testing.T) {
 	err = mount.WithTempMount(ctx, getMounts(thinDevice1), func(thin1MountPath string) error {
 		// Write v1 test file on 'thin-1' device
 		thin1TestFilePath := filepath.Join(thin1MountPath, "TEST")
-		err := ioutil.WriteFile(thin1TestFilePath, []byte("test file (v1)"), 0700)
+		err := os.WriteFile(thin1TestFilePath, []byte("test file (v1)"), 0700)
 		assert.NilError(t, err, "failed to write test file v1 on '%s' volume", thinDevice1)
 
 		return nil
@@ -124,7 +125,7 @@ func TestPoolDevice(t *testing.T) {
 	// Update TEST file on 'thin-1' to v2
 	err = mount.WithTempMount(ctx, getMounts(thinDevice1), func(thin1MountPath string) error {
 		thin1TestFilePath := filepath.Join(thin1MountPath, "TEST")
-		err = ioutil.WriteFile(thin1TestFilePath, []byte("test file (v2)"), 0700)
+		err = os.WriteFile(thin1TestFilePath, []byte("test file (v2)"), 0700)
 		assert.NilError(t, err, "failed to write test file v2 on 'thin-1' volume after taking snapshot")
 
 		return nil
@@ -135,7 +136,7 @@ func TestPoolDevice(t *testing.T) {
 	// Mount 'snap-1' and make sure TEST file is v1
 	err = mount.WithTempMount(ctx, getMounts(snapDevice1), func(snap1MountPath string) error {
 		// Read test file from snapshot device and make sure it's v1
-		fileData, err := ioutil.ReadFile(filepath.Join(snap1MountPath, "TEST"))
+		fileData, err := os.ReadFile(filepath.Join(snap1MountPath, "TEST"))
 		assert.NilError(t, err, "couldn't read test file from '%s' device", snapDevice1)
 		assert.Equal(t, "test file (v1)", string(fileData), "test file content is invalid on snapshot")
 
@@ -291,7 +292,7 @@ func getMounts(thinDeviceName string) []mount.Mount {
 }
 
 func createLoopbackDevice(t *testing.T, dir string) (string, string) {
-	file, err := ioutil.TempFile(dir, testsPrefix)
+	file, err := os.CreateTemp(dir, testsPrefix)
 	assert.NilError(t, err)
 
 	size, err := units.RAMInBytes("128Mb")

@@ -17,16 +17,15 @@
 package server
 
 import (
-	"io/ioutil"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/context"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	criconfig "github.com/containerd/containerd/pkg/cri/config"
 	servertesting "github.com/containerd/containerd/pkg/cri/server/testing"
@@ -37,7 +36,7 @@ func TestUpdateRuntimeConfig(t *testing.T) {
 		testTemplate = `
 {
 	"name": "test-pod-network",
-	"cniVersion": "0.3.1",
+	"cniVersion": "1.0.0",
 	"plugins": [
 	{
 		"type": "ptp",
@@ -55,7 +54,7 @@ func TestUpdateRuntimeConfig(t *testing.T) {
 		expected = `
 {
 	"name": "test-pod-network",
-	"cniVersion": "0.3.1",
+	"cniVersion": "1.0.0",
 	"plugins": [
 	{
 		"type": "ptp",
@@ -94,11 +93,11 @@ func TestUpdateRuntimeConfig(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			testDir, err := ioutil.TempDir(os.TempDir(), "test-runtime-config")
+			testDir, err := os.MkdirTemp(os.TempDir(), "test-runtime-config")
 			require.NoError(t, err)
 			defer os.RemoveAll(testDir)
 			templateName := filepath.Join(testDir, "template")
-			err = ioutil.WriteFile(templateName, []byte(testTemplate), 0666)
+			err = os.WriteFile(templateName, []byte(testTemplate), 0666)
 			require.NoError(t, err)
 			confDir := filepath.Join(testDir, "net.d")
 			confName := filepath.Join(confDir, cniConfigFileName)
@@ -122,8 +121,8 @@ func TestUpdateRuntimeConfig(t *testing.T) {
 				req.RuntimeConfig.NetworkConfig.PodCidr = ""
 			}
 			if !test.networkReady {
-				c.netPlugin.(*servertesting.FakeCNIPlugin).StatusErr = errors.New("random error")
-				c.netPlugin.(*servertesting.FakeCNIPlugin).LoadErr = errors.New("random error")
+				c.netPlugin[defaultNetworkPlugin].(*servertesting.FakeCNIPlugin).StatusErr = errors.New("random error")
+				c.netPlugin[defaultNetworkPlugin].(*servertesting.FakeCNIPlugin).LoadErr = errors.New("random error")
 			}
 			_, err = c.UpdateRuntimeConfig(context.Background(), req)
 			assert.NoError(t, err)
@@ -131,7 +130,7 @@ func TestUpdateRuntimeConfig(t *testing.T) {
 				_, err := os.Stat(confName)
 				assert.Error(t, err)
 			} else {
-				got, err := ioutil.ReadFile(confName)
+				got, err := os.ReadFile(confName)
 				assert.NoError(t, err)
 				assert.Equal(t, expected, string(got))
 			}

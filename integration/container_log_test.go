@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -20,7 +18,6 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -29,35 +26,25 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	runtime "k8s.io/cri-api/pkg/apis/runtime/v1alpha2"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 func TestContainerLogWithoutTailingNewLine(t *testing.T) {
-	testPodLogDir, err := ioutil.TempDir("/tmp", "container-log-without-tailing-newline")
+	testPodLogDir, err := os.MkdirTemp("/tmp", "container-log-without-tailing-newline")
 	require.NoError(t, err)
 	defer os.RemoveAll(testPodLogDir)
 
 	t.Log("Create a sandbox with log directory")
-	sbConfig := PodSandboxConfig("sandbox", "container-log-without-tailing-newline",
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "container-log-without-tailing-newline",
 		WithPodLogDirectory(testPodLogDir),
 	)
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
 
 	var (
 		testImage     = GetImage(BusyBox)
 		containerName = "test-container"
 	)
-	t.Logf("Pull test image %q", testImage)
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-	}()
+
+	EnsureImageExists(t, testImage)
 
 	t.Log("Create a container with log path")
 	cnConfig := ContainerConfig(
@@ -85,7 +72,7 @@ func TestContainerLogWithoutTailingNewLine(t *testing.T) {
 	}, time.Second, 30*time.Second))
 
 	t.Log("Check container log")
-	content, err := ioutil.ReadFile(filepath.Join(testPodLogDir, containerName))
+	content, err := os.ReadFile(filepath.Join(testPodLogDir, containerName))
 	assert.NoError(t, err)
 	checkContainerLog(t, string(content), []string{
 		fmt.Sprintf("%s %s %s", runtime.Stdout, runtime.LogTagPartial, "abcd"),
@@ -93,31 +80,21 @@ func TestContainerLogWithoutTailingNewLine(t *testing.T) {
 }
 
 func TestLongContainerLog(t *testing.T) {
-	testPodLogDir, err := ioutil.TempDir("/tmp", "long-container-log")
+	testPodLogDir, err := os.MkdirTemp("/tmp", "long-container-log")
 	require.NoError(t, err)
 	defer os.RemoveAll(testPodLogDir)
 
 	t.Log("Create a sandbox with log directory")
-	sbConfig := PodSandboxConfig("sandbox", "long-container-log",
+	sb, sbConfig := PodSandboxConfigWithCleanup(t, "sandbox", "long-container-log",
 		WithPodLogDirectory(testPodLogDir),
 	)
-	sb, err := runtimeService.RunPodSandbox(sbConfig, *runtimeHandler)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, runtimeService.StopPodSandbox(sb))
-		assert.NoError(t, runtimeService.RemovePodSandbox(sb))
-	}()
 
 	var (
 		testImage     = GetImage(BusyBox)
 		containerName = "test-container"
 	)
-	t.Logf("Pull test image %q", testImage)
-	img, err := imageService.PullImage(&runtime.ImageSpec{Image: testImage}, nil, sbConfig)
-	require.NoError(t, err)
-	defer func() {
-		assert.NoError(t, imageService.RemoveImage(&runtime.ImageSpec{Image: img}))
-	}()
+
+	EnsureImageExists(t, testImage)
 
 	t.Log("Create a container with log path")
 	config, err := CRIConfig()
@@ -152,7 +129,7 @@ func TestLongContainerLog(t *testing.T) {
 	}, time.Second, 30*time.Second))
 
 	t.Log("Check container log")
-	content, err := ioutil.ReadFile(filepath.Join(testPodLogDir, containerName))
+	content, err := os.ReadFile(filepath.Join(testPodLogDir, containerName))
 	assert.NoError(t, err)
 	checkContainerLog(t, string(content), []string{
 		fmt.Sprintf("%s %s %s", runtime.Stdout, runtime.LogTagFull, strings.Repeat("a", maxSize-1)),

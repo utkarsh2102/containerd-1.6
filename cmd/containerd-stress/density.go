@@ -21,7 +21,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -53,6 +52,7 @@ var densityCommand = cli.Command{
 			Duration:    cliContext.GlobalDuration("duration"),
 			Concurrency: cliContext.GlobalInt("concurrent"),
 			Exec:        cliContext.GlobalBool("exec"),
+			Image:       cliContext.GlobalString("image"),
 			JSON:        cliContext.GlobalBool("json"),
 			Metrics:     cliContext.GlobalString("metrics"),
 			Snapshotter: cliContext.GlobalString("snapshotter"),
@@ -66,8 +66,8 @@ var densityCommand = cli.Command{
 		if err := cleanup(ctx, client); err != nil {
 			return err
 		}
-		logrus.Infof("pulling %s", imageName)
-		image, err := client.Pull(ctx, imageName, containerd.WithPullUnpack, containerd.WithPullSnapshotter(config.Snapshotter))
+		logrus.Infof("pulling %s", config.Image)
+		image, err := client.Pull(ctx, config.Image, containerd.WithPullUnpack, containerd.WithPullSnapshotter(config.Snapshotter))
 		if err != nil {
 			return err
 		}
@@ -76,9 +76,6 @@ var densityCommand = cli.Command{
 		s := make(chan os.Signal, 1)
 		signal.Notify(s, syscall.SIGTERM, syscall.SIGINT)
 
-		if err != nil {
-			return err
-		}
 		var (
 			pids  []uint32
 			count = cliContext.Int("count")
@@ -172,7 +169,7 @@ func getMaps(pid int) (map[string]int, error) {
 }
 
 func getppid(pid int) (int, error) {
-	bytes, err := ioutil.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
+	bytes, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(pid), "stat"))
 	if err != nil {
 		return 0, err
 	}

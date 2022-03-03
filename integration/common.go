@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -20,11 +18,14 @@ package integration
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
+	"testing"
 
+	cri "github.com/containerd/containerd/integration/cri-api/pkg/apis"
 	"github.com/pelletier/go-toml"
 	"github.com/sirupsen/logrus"
-	cri "k8s.io/cri-api/pkg/apis"
+	"github.com/stretchr/testify/require"
+	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 )
 
 // ImageList holds public image references
@@ -48,21 +49,21 @@ func initImages(imageListFile string) {
 	imageList = ImageList{
 		Alpine:           "docker.io/library/alpine:latest",
 		BusyBox:          "docker.io/library/busybox:latest",
-		Pause:            "k8s.gcr.io/pause:3.5",
-		ResourceConsumer: "k8s.gcr.io/e2e-test-images/resource-consumer:1.9",
-		VolumeCopyUp:     "gcr.io/k8s-cri-containerd/volume-copy-up:2.0",
-		VolumeOwnership:  "gcr.io/k8s-cri-containerd/volume-ownership:2.0",
+		Pause:            "k8s.gcr.io/pause:3.6",
+		ResourceConsumer: "k8s.gcr.io/e2e-test-images/resource-consumer:1.10",
+		VolumeCopyUp:     "ghcr.io/containerd/volume-copy-up:2.1",
+		VolumeOwnership:  "ghcr.io/containerd/volume-ownership:2.1",
 	}
 
 	if imageListFile != "" {
-		fileContent, err := ioutil.ReadFile(imageListFile)
+		fileContent, err := os.ReadFile(imageListFile)
 		if err != nil {
-			panic(fmt.Errorf("Error reading '%v' file contents: %v", imageList, err))
+			panic(fmt.Errorf("error reading '%v' file contents: %v", imageList, err))
 		}
 
 		err = toml.Unmarshal(fileContent, &imageList)
 		if err != nil {
-			panic(fmt.Errorf("Error unmarshalling '%v' TOML file: %v", imageList, err))
+			panic(fmt.Errorf("error unmarshalling '%v' TOML file: %v", imageList, err))
 		}
 	}
 
@@ -103,4 +104,21 @@ func initImageMap(imageList ImageList) map[int]string {
 // GetImage returns the fully qualified URI to an image (including version)
 func GetImage(image int) string {
 	return imageMap[image]
+}
+
+// EnsureImageExists pulls the given image, ensures that no error was encountered
+// while pulling it.
+func EnsureImageExists(t *testing.T, imageName string) string {
+	img, err := imageService.ImageStatus(&runtime.ImageSpec{Image: imageName})
+	require.NoError(t, err)
+	if img != nil {
+		t.Logf("Image %q already exists, not pulling.", imageName)
+		return img.Id
+	}
+
+	t.Logf("Pull test image %q", imageName)
+	imgID, err := imageService.PullImage(&runtime.ImageSpec{Image: imageName}, nil, nil)
+	require.NoError(t, err)
+
+	return imgID
 }

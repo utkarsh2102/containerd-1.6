@@ -35,7 +35,6 @@ import (
 	"github.com/containerd/containerd/runtime/restart"
 	"github.com/containerd/containerd/services"
 	"github.com/containerd/containerd/snapshots"
-	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
 
@@ -63,6 +62,7 @@ func init() {
 	plugin.Register(&plugin.Registration{
 		Type: plugin.InternalPlugin,
 		Requires: []plugin.Type{
+			plugin.EventPlugin,
 			plugin.ServicePlugin,
 		},
 		ID: "restart",
@@ -93,32 +93,38 @@ func init() {
 func getServicesOpts(ic *plugin.InitContext) ([]containerd.ServicesOpt, error) {
 	plugins, err := ic.GetByType(plugin.ServicePlugin)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get service plugin")
+		return nil, fmt.Errorf("failed to get service plugin: %w", err)
 	}
+
+	ep, err := ic.Get(plugin.EventPlugin)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get event plugin: %w", err)
+	}
+
 	opts := []containerd.ServicesOpt{
-		containerd.WithEventService(ic.Events),
+		containerd.WithEventService(ep.(containerd.EventService)),
 	}
 	for s, fn := range map[string]func(interface{}) containerd.ServicesOpt{
 		services.ContentService: func(s interface{}) containerd.ServicesOpt {
 			return containerd.WithContentStore(s.(content.Store))
 		},
 		services.ImagesService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithImageService(s.(images.ImagesClient))
+			return containerd.WithImageClient(s.(images.ImagesClient))
 		},
 		services.SnapshotsService: func(s interface{}) containerd.ServicesOpt {
 			return containerd.WithSnapshotters(s.(map[string]snapshots.Snapshotter))
 		},
 		services.ContainersService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithContainerService(s.(containers.ContainersClient))
+			return containerd.WithContainerClient(s.(containers.ContainersClient))
 		},
 		services.TasksService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithTaskService(s.(tasks.TasksClient))
+			return containerd.WithTaskClient(s.(tasks.TasksClient))
 		},
 		services.DiffService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithDiffService(s.(diff.DiffClient))
+			return containerd.WithDiffClient(s.(diff.DiffClient))
 		},
 		services.NamespacesService: func(s interface{}) containerd.ServicesOpt {
-			return containerd.WithNamespaceService(s.(namespacesapi.NamespacesClient))
+			return containerd.WithNamespaceClient(s.(namespacesapi.NamespacesClient))
 		},
 		services.LeasesService: func(s interface{}) containerd.ServicesOpt {
 			return containerd.WithLeasesService(s.(leases.Manager))
@@ -126,14 +132,14 @@ func getServicesOpts(ic *plugin.InitContext) ([]containerd.ServicesOpt, error) {
 	} {
 		p := plugins[s]
 		if p == nil {
-			return nil, errors.Errorf("service %q not found", s)
+			return nil, fmt.Errorf("service %q not found", s)
 		}
 		i, err := p.Instance()
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to get instance of service %q", s)
+			return nil, fmt.Errorf("failed to get instance of service %q: %w", s, err)
 		}
 		if i == nil {
-			return nil, errors.Errorf("instance of service %q not found", s)
+			return nil, fmt.Errorf("instance of service %q not found", s)
 		}
 		opts = append(opts, fn(i))
 	}

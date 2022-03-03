@@ -1,5 +1,3 @@
-// +build linux
-
 /*
    Copyright The containerd Authors.
 
@@ -23,7 +21,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -34,13 +31,12 @@ import (
 	"github.com/containerd/containerd/snapshots/overlay/overlayutils"
 	"github.com/containerd/continuity/fs"
 	"github.com/containerd/continuity/fs/fstest"
-	"github.com/pkg/errors"
 )
 
 func TestOverlayApply(t *testing.T) {
 	testutil.RequiresRoot(t)
 
-	base, err := ioutil.TempDir("", "test-ovl-diff-apply-")
+	base, err := os.MkdirTemp("", "test-ovl-diff-apply-")
 	if err != nil {
 		t.Fatalf("unable to create temp dir: %+v", err)
 	}
@@ -59,7 +55,7 @@ func TestOverlayApply(t *testing.T) {
 func TestOverlayApplyNoParents(t *testing.T) {
 	testutil.RequiresRoot(t)
 
-	base, err := ioutil.TempDir("", "test-ovl-diff-apply-")
+	base, err := os.MkdirTemp("", "test-ovl-diff-apply-")
 	if err != nil {
 		t.Fatalf("unable to create temp dir: %+v", err)
 	}
@@ -71,11 +67,11 @@ func TestOverlayApplyNoParents(t *testing.T) {
 	fstest.FSSuite(t, overlayDiffApplier{
 		tmp: base,
 		diff: func(ctx context.Context, w io.Writer, a, b string, _ ...WriteDiffOpt) error {
-			cw := newChangeWriter(w, b)
+			cw := NewChangeWriter(w, b)
 			cw.addedDirs = nil
 			err := fs.Changes(ctx, a, b, cw.HandleChange)
 			if err != nil {
-				return errors.Wrap(err, "failed to create diff tar stream")
+				return fmt.Errorf("failed to create diff tar stream: %w", err)
 			}
 			return cw.Close()
 		},
@@ -98,9 +94,9 @@ type overlayContext struct {
 type contextKey struct{}
 
 func (d overlayDiffApplier) TestContext(ctx context.Context) (context.Context, func(), error) {
-	merged, err := ioutil.TempDir(d.tmp, "merged")
+	merged, err := os.MkdirTemp(d.tmp, "merged")
 	if err != nil {
-		return ctx, nil, errors.Wrap(err, "failed to make merged dir")
+		return ctx, nil, fmt.Errorf("failed to make merged dir: %w", err)
 	}
 
 	oc := &overlayContext{
@@ -119,9 +115,9 @@ func (d overlayDiffApplier) TestContext(ctx context.Context) (context.Context, f
 func (d overlayDiffApplier) Apply(ctx context.Context, a fstest.Applier) (string, func(), error) {
 	oc := ctx.Value(contextKey{}).(*overlayContext)
 
-	applyCopy, err := ioutil.TempDir(d.tmp, "apply-copy-")
+	applyCopy, err := os.MkdirTemp(d.tmp, "apply-copy-")
 	if err != nil {
-		return "", nil, errors.Wrap(err, "failed to create temp dir")
+		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 	defer os.RemoveAll(applyCopy)
 
@@ -131,33 +127,33 @@ func (d overlayDiffApplier) Apply(ctx context.Context, a fstest.Applier) (string
 	}
 
 	if err = fs.CopyDir(applyCopy, base); err != nil {
-		return "", nil, errors.Wrap(err, "failed to copy base")
+		return "", nil, fmt.Errorf("failed to copy base: %w", err)
 	}
 
 	if err := a.Apply(applyCopy); err != nil {
-		return "", nil, errors.Wrap(err, "failed to apply changes to copy of base")
+		return "", nil, fmt.Errorf("failed to apply changes to copy of base: %w", err)
 	}
 
 	buf := bytes.NewBuffer(nil)
 
 	if err := d.diff(ctx, buf, base, applyCopy); err != nil {
-		return "", nil, errors.Wrap(err, "failed to create diff")
+		return "", nil, fmt.Errorf("failed to create diff: %w", err)
 	}
 
 	if oc.mounted {
 		if err := mount.Unmount(oc.merged, 0); err != nil {
-			return "", nil, errors.Wrap(err, "failed to unmount")
+			return "", nil, fmt.Errorf("failed to unmount: %w", err)
 		}
 		oc.mounted = false
 	}
 
-	next, err := ioutil.TempDir(d.tmp, "lower-")
+	next, err := os.MkdirTemp(d.tmp, "lower-")
 	if err != nil {
-		return "", nil, errors.Wrap(err, "failed to create temp dir")
+		return "", nil, fmt.Errorf("failed to create temp dir: %w", err)
 	}
 
 	if _, err = Apply(ctx, next, buf, WithConvertWhiteout(OverlayConvertWhiteout), WithParents(oc.lowers)); err != nil {
-		return "", nil, errors.Wrap(err, "failed to apply tar stream")
+		return "", nil, fmt.Errorf("failed to apply tar stream: %w", err)
 	}
 
 	oc.lowers = append([]string{next}, oc.lowers...)
@@ -175,7 +171,7 @@ func (d overlayDiffApplier) Apply(ctx context.Context, a fstest.Applier) (string
 	}
 
 	if err := m.Mount(oc.merged); err != nil {
-		return "", nil, errors.Wrapf(err, "failed to mount: %v", m)
+		return "", nil, fmt.Errorf("failed to mount: %v: %w", m, err)
 	}
 	oc.mounted = true
 
