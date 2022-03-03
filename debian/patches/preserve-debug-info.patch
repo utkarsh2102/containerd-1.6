@@ -1,6 +1,6 @@
 --- a/Makefile
 +++ b/Makefile
-@@ -53,7 +53,6 @@
+@@ -63,7 +63,6 @@
  endif
  
  ifndef GODEBUG
