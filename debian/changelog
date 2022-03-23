@@ -1,3 +1,12 @@
+containerd (1.6.1-0ubuntu0.1) UNRELEASED; urgency=medium
+
+  * New upstream version 1.6.1.
+  * d/patches/*: Refresh d/patches.
+  * d/p/relax-test-for-system-without-hugetlb.patch:
+    Add patch to relax test for system without hugetlb.
+
+ -- Utkarsh Gupta <utkarsh@debian.org>  Thu, 03 Mar 2022 12:24:58 +0530
+
 containerd (1.5.9-0ubuntu1) jammy; urgency=medium
 
   * New upstream release (LP: #1946851, #1955413).
