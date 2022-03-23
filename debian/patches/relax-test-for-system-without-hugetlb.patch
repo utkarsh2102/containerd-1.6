@@ -1,0 +1,39 @@
+From b13d3e05c1bc2340bf07fa6f997b57fd6f941e3d Mon Sep 17 00:00:00 2001
+From: Shengjing Zhu <zhsj@debian.org>
+Date: Tue, 22 Feb 2022 01:34:13 +0800
+Subject: [PATCH] cri: relax test for system without hugetlb
+
+These unit tests don't check hugetlb. However by setting
+TolerateMissingHugetlbController to false, these tests can't
+be run on system without hugetlb (e.g. Debian buildd).
+
+Signed-off-by: Shengjing Zhu <zhsj@debian.org>
+(cherry picked from commit 352a8f49f7942f588a091ef5c3c49c0c0bb120e8)
+---
+ pkg/cri/server/container_update_resources_linux_test.go | 2 +-
+ pkg/cri/server/service_test.go                          | 3 ++-
+ 2 files changed, 3 insertions(+), 2 deletions(-)
+
+--- a/pkg/cri/server/container_update_resources_linux_test.go
++++ b/pkg/cri/server/container_update_resources_linux_test.go
+@@ -215,7 +215,7 @@
+ 		t.Logf("TestCase %q", desc)
+ 		config := criconfig.Config{
+ 			PluginConfig: criconfig.PluginConfig{
+-				TolerateMissingHugetlbController: false,
++				TolerateMissingHugetlbController: true,
+ 				DisableHugetlbController:         false,
+ 			},
+ 		}
+--- a/pkg/cri/server/service_test.go
++++ b/pkg/cri/server/service_test.go
+@@ -55,7 +55,8 @@
+ 			RootDir:  testRootDir,
+ 			StateDir: testStateDir,
+ 			PluginConfig: criconfig.PluginConfig{
+-				SandboxImage: testSandboxImage,
++				SandboxImage:                     testSandboxImage,
++				TolerateMissingHugetlbController: true,
+ 			},
+ 		},
+ 		imageFSPath:        testImageFSPath,
