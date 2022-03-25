@@ -60,8 +60,8 @@ ifneq (arm, $(DEB_HOST_ARCH_CPU)) # skip the tests on armhf ("--- FAIL: TestPars
 endif
 
 override_dh_auto_install:
-	make install DESTDIR='$(CURDIR)/debian/tmp/usr'
-	make install-man DESTDIR='$(CURDIR)/debian/tmp/usr/share'
+	make install PREFIX='/usr' DESTDIR='$(CURDIR)/debian/tmp'
+	make install-man PREFIX='/usr' DESTDIR='$(CURDIR)/debian/tmp'
 	mkdir -p debian/tmp/usr/share/gocode/src/github.com/containerd \
 		&& mv .pristine-source debian/tmp/usr/share/gocode/src/github.com/containerd/containerd
 
