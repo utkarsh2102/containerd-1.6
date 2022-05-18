@@ -3,3 +3,4 @@ preserve-debug-info.patch
 relax-test-for-system-without-hugetlb.patch
 build-with-go1.18.patch
 use-mod-vendor.patch
+run-TestNormalize-only-on-Windows.patch
