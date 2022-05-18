@@ -1,3 +1,10 @@
+containerd (1.6.1-0ubuntu0.2) jammy; urgency=medium
+
+  * No-change rebuild for GKE/Jammy.
+    (cf: the ARM arch is enabled in the PPA now)
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Wed, 18 May 2022 15:35:28 +0530
+
 containerd (1.6.1-0ubuntu0.1) jammy; urgency=medium
 
   * New upstream version 1.6.1.
