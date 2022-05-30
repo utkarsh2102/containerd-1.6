@@ -1,3 +1,10 @@
+containerd (1.6.1-0ubuntu0.4) jammy; urgency=medium
+
+  * Add patch to fix the Inheritable capability defaults.
+    (Fixes: CVE-2022-24769)
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Mon, 30 May 2022 15:36:07 +0530
+
 containerd (1.6.1-0ubuntu0.3) jammy; urgency=medium
 
   * Add patch to run TestNormalize on Windows only.
