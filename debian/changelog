@@ -1,3 +1,9 @@
+containerd (1.6.6-0ubuntu0~20.04.1~gke1) focal; urgency=medium
+
+  * New upstream version 1.6.6.
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Tue, 14 Jun 2022 20:57:56 +0530
+
 containerd (1.6.1-0ubuntu0.4) jammy; urgency=medium
 
   * Add patch to fix the Inheritable capability defaults.
