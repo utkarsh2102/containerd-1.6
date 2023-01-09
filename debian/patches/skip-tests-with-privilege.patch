@@ -7,7 +7,7 @@ Last-Updated: 2021-05-20
 
 --- a/pkg/cri/server/container_create_linux_test.go
 +++ b/pkg/cri/server/container_create_linux_test.go
-@@ -189,6 +189,7 @@
+@@ -192,6 +192,7 @@
  }
  
  func TestContainerCapabilities(t *testing.T) {
@@ -15,7 +15,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -269,6 +270,7 @@
+@@ -271,6 +272,7 @@
  }
  
  func TestContainerSpecTty(t *testing.T) {
@@ -23,7 +23,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -291,6 +293,7 @@
+@@ -293,6 +295,7 @@
  }
  
  func TestContainerSpecDefaultPath(t *testing.T) {
@@ -31,7 +31,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -313,6 +316,7 @@
+@@ -315,6 +318,7 @@
  }
  
  func TestContainerSpecReadonlyRootfs(t *testing.T) {
@@ -39,7 +39,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -330,6 +334,7 @@
+@@ -332,6 +336,7 @@
  }
  
  func TestContainerSpecWithExtraMounts(t *testing.T) {
@@ -47,7 +47,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -391,6 +396,7 @@
+@@ -393,6 +398,7 @@
  }
  
  func TestContainerAndSandboxPrivileged(t *testing.T) {
@@ -55,7 +55,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -604,6 +610,7 @@
+@@ -606,6 +612,7 @@
  }
  
  func TestPrivilegedBindMount(t *testing.T) {
@@ -63,7 +63,7 @@ Last-Updated: 2021-05-20
  	testPid := uint32(1234)
  	c := newTestCRIService()
  	testSandboxID := "sandbox-id"
-@@ -754,6 +761,7 @@
+@@ -756,6 +763,7 @@
  }
  
  func TestPidNamespace(t *testing.T) {
@@ -71,7 +71,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testPid := uint32(1234)
  	testSandboxID := "sandbox-id"
-@@ -795,6 +803,7 @@
+@@ -797,6 +805,7 @@
  }
  
  func TestNoDefaultRunMount(t *testing.T) {
@@ -79,7 +79,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testPid := uint32(1234)
  	testSandboxID := "sandbox-id"
-@@ -1099,6 +1108,7 @@
+@@ -1101,6 +1110,7 @@
  }
  
  func TestMaskedAndReadonlyPaths(t *testing.T) {
@@ -87,7 +87,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -1187,6 +1197,7 @@
+@@ -1189,6 +1199,7 @@
  }
  
  func TestHostname(t *testing.T) {
@@ -95,7 +95,7 @@ Last-Updated: 2021-05-20
  	testID := "test-id"
  	testSandboxID := "sandbox-id"
  	testContainerName := "container-name"
-@@ -1384,6 +1395,7 @@
+@@ -1386,6 +1397,7 @@
  }
  
  func TestPrivilegedDevices(t *testing.T) {
@@ -103,7 +103,7 @@ Last-Updated: 2021-05-20
  	testPid := uint32(1234)
  	c := newTestCRIService()
  	testSandboxID := "sandbox-id"
-@@ -1446,6 +1458,7 @@
+@@ -1448,6 +1460,7 @@
  }
  
  func TestBaseOCISpec(t *testing.T) {

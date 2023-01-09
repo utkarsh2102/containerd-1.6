@@ -7,7 +7,7 @@ Last-Updated: 2022-03-25
 
 --- a/Makefile
 +++ b/Makefile
-@@ -254,11 +254,11 @@
+@@ -273,11 +273,11 @@
  
  man/containerd.8: FORCE
  	@echo "$(WHALE) $@"
