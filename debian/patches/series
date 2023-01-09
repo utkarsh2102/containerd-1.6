@@ -2,5 +2,4 @@ skip-tests-with-privilege.patch
 preserve-debug-info.patch
 build-with-go1.18.patch
 use-mod-vendor.patch
-run-TestNormalize-only-on-Windows.patch
 CVE-2022-24769.patch
