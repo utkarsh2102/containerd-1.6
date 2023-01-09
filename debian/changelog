@@ -1,3 +1,12 @@
+containerd (1.6.12-0ubuntu0~20.04.1~gke1) focal; urgency=medium
+
+  * New upstream version 1.6.12. (Fixes: CVE-2022-23471)
+  * Use Golang 1.18 for building instead of default Golang 1.13.
+  * Drop patches which are not being used anymore.
+  * Refresh d/patches.
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Mon, 09 Jan 2023 17:11:05 +0530
+
 containerd (1.6.6-0ubuntu0~20.04.1~gke1) focal; urgency=medium
 
   * New upstream version 1.6.6.
