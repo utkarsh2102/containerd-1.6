@@ -1,3 +1,11 @@
+containerd (1.6.18-0ubuntu0~20.04.1~gke1) focal; urgency=medium
+
+  * New upstream version 1.6.18.
+    (Fixes: CVE-2023-25153, CVE-2023-25173)
+  * Refresh d/patches.
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Tue, 07 Mar 2023 14:53:50 +0530
+
 containerd (1.6.12-0ubuntu0~22.04.1~gke1) jammy; urgency=medium
 
   * No-change rebuild for Jammy. (Fixes: CVE-2022-23471)
