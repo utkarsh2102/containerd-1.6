@@ -139,11 +139,11 @@ Last-Updated: 2021-05-20
  	}
 --- a/pkg/cri/server/container_update_resources_linux_test.go
 +++ b/pkg/cri/server/container_update_resources_linux_test.go
-@@ -29,6 +29,7 @@
+@@ -30,6 +30,7 @@
  )
  
  func TestUpdateOCILinuxResource(t *testing.T) {
 +	t.Skip("It requires some privileges not achievable during the build.")
  	oomscoreadj := new(int)
  	*oomscoreadj = -500
- 	for desc, test := range map[string]struct {
+ 	expectedSwap := func(swap int64) *int64 {
