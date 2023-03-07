@@ -27,6 +27,8 @@ env:
   RESOURCE_CONSUMER_TESTING_IMAGE_REF: "registry.k8s.io/e2e-test-images/resource-consumer:1.10"
   WEBSERVER_TESTING_IMAGE_REF: "registry.k8s.io/e2e-test-images/nginx:1.14-2"
 
+permissions:  # added using https://github.com/step-security/secure-workflows
+  contents: read
 
 jobs:
   winIntegration:
@@ -48,7 +50,7 @@ jobs:
           GOOGLE_BUCKET: "containerd-integration/logs/windows-ltsc2022/"
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
 
       - name: Install required packages
         run: |
