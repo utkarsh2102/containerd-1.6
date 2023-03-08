@@ -1,3 +1,9 @@
+containerd (1.6.18-0ubuntu0~20.04.2~gke1) focal; urgency=medium
+
+  * Add patch to skip negative OOM score adjustment test.
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Wed, 08 Mar 2023 12:55:09 +0530
+
 containerd (1.6.18-0ubuntu0~20.04.1~gke1) focal; urgency=medium
 
   * New upstream version 1.6.18.
