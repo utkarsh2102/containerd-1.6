@@ -1,3 +1,10 @@
+containerd (1.6.18-0ubuntu0~22.04.2~gke1) jammy; urgency=medium
+
+  * No-change rebuild for Jammy.
+    (Fixes: CVE-2023-25153, CVE-2023-25173)
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Wed, 08 Mar 2023 13:33:43 +0530
+
 containerd (1.6.18-0ubuntu0~20.04.2~gke1) focal; urgency=medium
 
   * Add patch to skip negative OOM score adjustment test.
