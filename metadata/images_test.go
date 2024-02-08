@@ -129,6 +129,7 @@ func TestImagesList(t *testing.T) {
 			}
 
 			for _, result := range results {
+				result := result
 				checkImagesEqual(t, &result, testset[result.Name], "list results did not match")
 			}
 		})
@@ -480,6 +481,7 @@ func TestImagesCreateUpdateDelete(t *testing.T) {
 			cause: errdefs.ErrNotFound,
 		},
 	} {
+		testcase := testcase
 		t.Run(testcase.name, func(t *testing.T) {
 			testcase.original.Name = testcase.name
 			if testcase.input.Name == "" {

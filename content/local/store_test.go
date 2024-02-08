@@ -20,10 +20,10 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	_ "crypto/sha256" // required for digest package
 	"fmt"
 	"io"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,6 +35,7 @@ import (
 	"github.com/containerd/containerd/content"
 	"github.com/containerd/containerd/content/testsuite"
 	"github.com/containerd/containerd/errdefs"
+	"github.com/containerd/containerd/pkg/randutil"
 	"github.com/containerd/containerd/pkg/testutil"
 
 	"github.com/opencontainers/go-digest"
@@ -268,7 +269,7 @@ func generateBlobs(t checker, nblobs, maxsize int64) map[digest.Digest][]byte {
 	blobs := map[digest.Digest][]byte{}
 
 	for i := int64(0); i < nblobs; i++ {
-		p := make([]byte, rand.Int63n(maxsize))
+		p := make([]byte, randutil.Int63n(maxsize))
 
 		if _, err := rand.Read(p); err != nil {
 			t.Fatal(err)
@@ -291,28 +292,17 @@ func populateBlobStore(ctx context.Context, t checker, cs content.Store, nblobs,
 	return blobs
 }
 
-func contentStoreEnv(t checker) (context.Context, string, content.Store, func()) {
-	pc, _, _, ok := runtime.Caller(1)
-	if !ok {
-		t.Fatal("failed to resolve caller")
-	}
-	fn := runtime.FuncForPC(pc)
-
-	tmpdir, err := os.MkdirTemp("", filepath.Base(fn.Name())+"-")
-	if err != nil {
-		t.Fatal(err)
-	}
+func contentStoreEnv(t testing.TB) (context.Context, string, content.Store, func()) {
+	tmpdir := t.TempDir()
 
 	cs, err := NewStore(tmpdir)
 	if err != nil {
-		os.RemoveAll(tmpdir)
 		t.Fatal(err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	return ctx, tmpdir, cs, func() {
 		cancel()
-		os.RemoveAll(tmpdir)
 	}
 }
 
@@ -361,11 +351,7 @@ func checkWrite(ctx context.Context, t checker, cs content.Store, dgst digest.Di
 }
 
 func TestWriterTruncateRecoversFromIncompleteWrite(t *testing.T) {
-	tmpdir, err := os.MkdirTemp("", "test-local-content-store-recover")
-	assert.NilError(t, err)
-	defer os.RemoveAll(tmpdir)
-
-	cs, err := NewStore(tmpdir)
+	cs, err := NewStore(t.TempDir())
 	assert.NilError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -400,11 +386,7 @@ func setupIncompleteWrite(ctx context.Context, t *testing.T, cs content.Store, r
 }
 
 func TestWriteReadEmptyFileTimestamp(t *testing.T) {
-	root, err := os.MkdirTemp("", "test-write-read-file-timestamp")
-	if err != nil {
-		t.Errorf("failed to create a tmp dir: %v", err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 
 	emptyFile := filepath.Join(root, "updatedat")
 	if err := writeTimestampFile(emptyFile, time.Time{}); err != nil {
