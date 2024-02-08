@@ -2,9 +2,9 @@
 
 include /usr/share/dpkg/architecture.mk
 
-# use Go 1.18 as golang-any defaults to Go 1.13, which
+# use Go 1.21 as golang-any available in the archive
 # doesn't have new features needed by this package.
-export PATH := /usr/lib/go-1.18/bin:$(PATH)
+export PATH := /usr/lib/go-1.21/bin:$(PATH)
 
 # temporary build path (see http://golang.org/doc/code.html#GOPATH)
 OUR_GOPATH := $(CURDIR)/.gopath
