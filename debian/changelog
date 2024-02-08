@@ -1,3 +1,11 @@
+containerd (1.6.27-0ubuntu0~22.04.1~gke1) jammy; urgency=medium
+
+  * New upstream version 1.6.27.
+  * Use Golang 1.21 for 1.6.27 as Go 1.20 is not up-to-date.
+  * Add patch to add go:noinline to FTBFS (tests failures).
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Fri, 09 Feb 2024 01:21:16 +0530
+
 containerd (1.6.18-0ubuntu0~22.04.2~gke1) jammy; urgency=medium
 
   * No-change rebuild for Jammy.
