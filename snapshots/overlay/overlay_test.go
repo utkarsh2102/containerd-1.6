@@ -71,7 +71,7 @@ func TestOverlay(t *testing.T) {
 				testOverlayOverlayRead(t, newSnapshotter)
 			})
 			t.Run("TestOverlayView", func(t *testing.T) {
-				testOverlayView(t, newSnapshotter)
+				testOverlayView(t, newSnapshotterWithOpts(append(opts, WithMountOptions([]string{"volatile"}))...))
 			})
 		})
 	}
@@ -79,11 +79,7 @@ func TestOverlay(t *testing.T) {
 
 func testOverlayMounts(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	ctx := context.TODO()
-	root, err := os.MkdirTemp("", "overlay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 	o, _, err := newSnapshotter(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -113,11 +109,7 @@ func testOverlayMounts(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 
 func testOverlayCommit(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	ctx := context.TODO()
-	root, err := os.MkdirTemp("", "overlay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 	o, _, err := newSnapshotter(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -138,11 +130,7 @@ func testOverlayCommit(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 
 func testOverlayOverlayMount(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	ctx := context.TODO()
-	root, err := os.MkdirTemp("", "overlay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 	o, _, err := newSnapshotter(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -235,11 +223,7 @@ func getParents(ctx context.Context, sn snapshots.Snapshotter, root, key string)
 func testOverlayOverlayRead(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	testutil.RequiresRoot(t)
 	ctx := context.TODO()
-	root, err := os.MkdirTemp("", "overlay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 	o, _, err := newSnapshotter(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -278,11 +262,7 @@ func testOverlayOverlayRead(t *testing.T, newSnapshotter testsuite.SnapshotterFu
 
 func testOverlayView(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	ctx := context.TODO()
-	root, err := os.MkdirTemp("", "overlay")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 	o, _, err := newSnapshotter(ctx, root)
 	if err != nil {
 		t.Fatal(err)
@@ -350,7 +330,7 @@ func testOverlayView(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	}
 
 	supportsIndex := supportsIndex()
-	expectedOptions := 2
+	expectedOptions := 3
 	if !supportsIndex {
 		expectedOptions--
 	}
@@ -367,12 +347,15 @@ func testOverlayView(t *testing.T, newSnapshotter testsuite.SnapshotterFunc) {
 	}
 	lowers := getParents(ctx, o, root, "/tmp/view2")
 	expected = fmt.Sprintf("lowerdir=%s:%s", lowers[0], lowers[1])
-	optIdx := 1
+	optIdx := 2
 	if !supportsIndex {
 		optIdx--
 	}
 	if userxattr {
 		optIdx++
+	}
+	if m.Options[0] != "volatile" {
+		t.Error("expected option first option to be provided option \"volatile\"")
 	}
 	if m.Options[optIdx] != expected {
 		t.Errorf("expected option %q but received %q", expected, m.Options[optIdx])
