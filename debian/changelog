@@ -1,3 +1,9 @@
+containerd (1.6.28-0ubuntu0~22.04.1~gke1) jammy; urgency=medium
+
+  * New upstream version 1.6.28.
+
+ -- Utkarsh Gupta <utkarsh@ubuntu.com>  Wed, 21 Feb 2024 18:22:15 +0530
+
 containerd (1.6.27-0ubuntu0~22.04.1~gke1) jammy; urgency=medium
 
   * New upstream version 1.6.27.
